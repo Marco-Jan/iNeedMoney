@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>iNeedMoney</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="styles.css">
+  <meta name="theme-color" content="#1a5c3a">
+</head>
+<body>
+  <header>
+    <h1>iNeedMoney</h1>
+    <div id="saldo" class="saldo">0,00 €</div>
+    <div id="saldo-hinweis" class="hinweis"></div>
+    <button id="reset-knopf" type="button" class="reset-knopf">Alles zurücksetzen</button>
+  </header>
+
+  <main id="kacheln">
+    <button class="kachel" data-oeffnet="einzel" type="button">
+      <span class="kachel-icon">💶</span>
+      <span class="kachel-titel">Einzahlen</span>
+      <span class="kachel-untertitel">Geld auf das Konto</span>
+    </button>
+
+    <button class="kachel" data-oeffnet="ausgabe" type="button">
+      <span class="kachel-icon">🛍️</span>
+      <span class="kachel-titel">Spontane Ausgabe</span>
+      <span class="kachel-untertitel">Mit Warnung bei zu viel</span>
+    </button>
+
+    <button class="kachel" data-oeffnet="posten" type="button">
+      <span class="kachel-icon">📅</span>
+      <span class="kachel-titel">Posten</span>
+      <span class="kachel-untertitel">Monatliche Abzüge</span>
+    </button>
+
+    <button class="kachel" data-oeffnet="kalender" type="button">
+      <span class="kachel-icon">🗓️</span>
+      <span class="kachel-titel">Kalender</span>
+      <span class="kachel-untertitel">Posten pro Tag</span>
+    </button>
+
+  </main>
+
+  <section class="card" id="sec-historie">
+    <h2>Letzte Transaktionen</h2>
+    <ul id="historie"></ul>
+  </section>
+
+  <div id="overlay" class="overlay" hidden>
+    <div class="overlay-card" role="dialog" aria-modal="true">
+      <header class="overlay-head">
+        <h2 id="overlay-titel"></h2>
+        <button id="overlay-schliessen" type="button" aria-label="Schließen">✕</button>
+      </header>
+
+      <div class="overlay-body" data-body="einzel">
+        <form id="form-einzahlung">
+          <label for="ein-betrag">Betrag (€)</label>
+          <input id="ein-betrag" type="number" inputmode="decimal" min="0.01" step="0.01" required>
+          <button type="submit">Einzahlen</button>
+        </form>
+      </div>
+
+      <div class="overlay-body" data-body="ausgabe" hidden>
+        <div id="ausgabe-warnung" class="warnung" hidden></div>
+        <form id="form-ausgabe">
+          <label for="aus-betrag">Betrag (€)</label>
+          <input id="aus-betrag" type="number" inputmode="decimal" min="0.01" step="0.01" required>
+          <label for="aus-notiz">Notiz (optional)</label>
+          <input id="aus-notiz" type="text" maxlength="60">
+          <button type="submit">Ausgeben</button>
+        </form>
+      </div>
+
+      <div class="overlay-body" data-body="posten" hidden>
+        <form id="form-posten">
+          <label for="post-name">Bezeichnung</label>
+          <input id="post-name" type="text" maxlength="40" required>
+          <label for="post-betrag">Betrag (€)</label>
+          <input id="post-betrag" type="number" inputmode="decimal" min="0.01" step="0.01" required>
+          <label for="post-tag">Tag im Monat</label>
+          <input id="post-tag" type="number" min="1" max="31" step="1" required>
+          <button type="submit">Posten anlegen</button>
+        </form>
+        <ul id="posten-liste"></ul>
+      </div>
+
+      <div class="overlay-body" data-body="kalender" hidden>
+        <div class="kal-nav">
+          <button id="kal-prev" type="button">‹</button>
+          <span id="kal-monat"></span>
+          <button id="kal-next" type="button">›</button>
+        </div>
+        <div class="kal-grid" id="kal-grid"></div>
+        <p id="kal-offen" class="hinweis"></p>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
