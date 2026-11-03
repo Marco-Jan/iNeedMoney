@@ -45,23 +45,24 @@ assert(state().posten.length === 1 && state().posten[0].betrag === 5600, 'Posten
 assert(state().saldo === 10000, 'kein Abzug (Tag 28 in Zukunft)');
 
 const c0 = confirms;
+// Regel: Warnung, wenn Betrag > floor(summeOffenerPosten / 3) = floor(5600/3) = 1866 Cent (18,66 €)
 inp('aus-betrag').value = '20'; inp('aus-notiz').value = 'Kaffee';
 submit('form-ausgabe');
-assert(confirms === c0 + 1, 'Ausgabe 20 -> Saldo 80 < 56 offen -> Warnung (confirm)');
+assert(confirms === c0 + 1, 'Ausgabe 20 > 18,66 (1/3 von 56) -> Warnung (confirm)');
 assert(state().saldo === 8000, 'Saldo nach Ausgabe 20 = 8000 Cent');
 
 inp('aus-betrag').value = '10';
 submit('form-ausgabe');
-assert(confirms === c0 + 2, 'Ausgabe 10 -> Saldo 70 > 56 offen, aber 70-10=60 >= 56 -> keine Warnung');
+assert(confirms === c0 + 1, 'Ausgabe 10 <= 18,66 -> keine Warnung');
 assert(state().saldo === 7000, 'Saldo nach Ausgabe 10 = 7000 Cent');
 
 inp('aus-betrag').value = '20';
 submit('form-ausgabe');
-assert(confirms === c0 + 3, 'Ausgabe 20 -> Saldo 50 < 56 offen -> Warnung (confirm)');
+assert(confirms === c0 + 2, 'Ausgabe 20 > 18,66 -> Warnung (confirm)');
 assert(state().saldo === 5000, 'Saldo nach Ausgabe 20 = 5000 Cent');
 
 inp('post-name').value = 'Miete'; inp('post-betrag').value = '50'; inp('post-tag').value = '1';
 submit('form-posten');
-assert(state().saldo === 2000, 'Posten Miete am Tag 1 -> sofort abgezogen (Saldo 2000)');
+assert(state().saldo === 0, 'Posten Miete am Tag 1 -> sofort abgezogen (Saldo 0)');
 assert(state().transaktionen.some(t => t.typ === 'posten' && t.name === 'Miete'), 'Abzug in Historie');
 console.log('ALLE TESTS OK');

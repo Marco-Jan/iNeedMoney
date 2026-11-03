@@ -53,7 +53,8 @@ function abrechnen() {
     state.saldo -= p.betrag;
     state.transaktionen.unshift({ id: Date.now() + Math.random(), typ: 'posten', betrag: p.betrag, datum: heuteISO(), name: p.name });
   }
-  state.abgegriffen[h.monatsKey] = state.posten.filter(p => p.tag <= h.tag).map(p => p.id);
+  const schon = state.abgegriffen[h.monatsKey] || [];
+  state.abgegriffen[h.monatsKey] = schon.concat(faellig.map(p => p.id));
   speichere();
 }
 
@@ -108,6 +109,28 @@ function rendPosten() {
   }
 }
 
+function rendPostenUebersicht() {
+  const ul = document.getElementById('posten-uebersicht');
+  ul.innerHTML = '';
+  const h = heute();
+  const schon = state.abgegriffen[h.monatsKey] || [];
+  const posten = state.posten.slice().sort((a, b) => a.tag - b.tag);
+  for (const p of posten) {
+    const li = document.createElement('li');
+    const span = document.createElement('span');
+    span.textContent = p.name + ' · am ' + p.tag + '.';
+    const betrag = document.createElement('span');
+    betrag.className = 'betrag';
+    betrag.textContent = eur(p.betrag);
+    if (p.tag <= h.tag && schon.includes(p.id)) {
+      li.classList.add('abgezogen');
+      span.textContent += ' ✓';
+    }
+    li.append(span, betrag);
+    ul.appendChild(li);
+  }
+}
+
 function rendHistorie() {
   const ul = document.getElementById('historie');
   ul.innerHTML = '';
@@ -121,6 +144,28 @@ function rendHistorie() {
     li.append(span, betrag);
     ul.appendChild(li);
   }
+}
+
+function rendAusgaben() {
+  const ul = document.getElementById('ausgaben-liste');
+  const summeEl = document.getElementById('ausgaben-summe');
+  if (!ul) return;
+  ul.innerHTML = '';
+  const ausgaben = state.transaktionen.filter(t => t.typ === 'ausgabe').slice(0, 5);
+  for (const t of ausgaben) {
+    const li = document.createElement('li');
+    const span = document.createElement('span');
+    span.textContent = t.datum + (t.name ? ' · ' + t.name : '');
+    const betrag = document.createElement('span');
+    betrag.className = 'betrag';
+    betrag.textContent = '−' + eur(t.betrag);
+    li.append(span, betrag);
+    ul.appendChild(li);
+  }
+  const alle = state.transaktionen.filter(t => t.typ === 'ausgabe');
+  summeEl.textContent = alle.length
+    ? 'Gesamt: ' + eur(alle.reduce((s, t) => s + t.betrag, 0)) + ' (' + alle.length + ' Ausgaben)'
+    : 'Noch keine Ausgaben erfasst.';
 }
 
 let kalMonat = new Date().getMonth(); // 0-11, aktueller Anzeigemonat
@@ -169,7 +214,9 @@ function rendKalender() {
 function rendAlle() {
   rendSaldo();
   rendPosten();
+  rendPostenUebersicht();
   rendHistorie();
+  rendAusgaben();
   rendKalender();
 }
 
@@ -203,9 +250,10 @@ document.getElementById('form-ausgabe').addEventListener('submit', e => {
     warnBox.hidden = false;
     return;
   }
-  if (summe > 0 && nachAbzug < summe) {
-    warnBox.textContent = 'Achtung: Nach dieser Ausgabe bleibt nur noch ' + eur(nachAbzug) +
-      ', aber es stehen ' + eur(summe) + ' an Posten im Monat an. Der Saldo würde unter die offenen Posten fallen.';
+  // Regel: Betrag > 1/3 der Summe der noch offenen Posten (künftige Tage im laufenden Monat)
+  if (summe > 0 && betrag > Math.floor(summe / 3)) {
+    warnBox.textContent = 'Achtung: ' + eur(betrag) + ' sind mehr als ein Drittel der noch offenen Posten (' +
+      eur(summe) + '). So eine Ausgabe könnte deinen Sparplan gefährden.';
     warnBox.hidden = false;
     if (!confirm('Trotz Warnung ausgeben?')) return;
   }
@@ -242,6 +290,7 @@ const OVERLAY_TITEL = {
   ausgabe: 'Spontane Ausgabe',
   posten: 'Posten (monatlich)',
   kalender: 'Kalender',
+  ausgaben: 'Alle Ausgaben',
 };
 
 function overlayOeffnen(name) {

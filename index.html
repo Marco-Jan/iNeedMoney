@@ -16,32 +16,39 @@
     <button id="reset-knopf" type="button" class="reset-knopf">Alles zurücksetzen</button>
   </header>
 
+  <div id="toast" class="toast" hidden></div>
+
   <main id="kacheln">
-    <button class="kachel" data-oeffnet="einzel" type="button">
+    <button class="kachel kachel-ein" data-oeffnet="einzel" type="button">
       <span class="kachel-icon">💶</span>
       <span class="kachel-titel">Einzahlen</span>
       <span class="kachel-untertitel">Geld auf das Konto</span>
     </button>
 
-    <button class="kachel" data-oeffnet="ausgabe" type="button">
+    <button class="kachel kachel-aus" data-oeffnet="ausgabe" type="button">
       <span class="kachel-icon">🛍️</span>
       <span class="kachel-titel">Spontane Ausgabe</span>
       <span class="kachel-untertitel">Mit Warnung bei zu viel</span>
     </button>
 
-    <button class="kachel" data-oeffnet="posten" type="button">
+    <button class="kachel kachel-posten" data-oeffnet="posten" type="button">
       <span class="kachel-icon">📅</span>
       <span class="kachel-titel">Posten</span>
       <span class="kachel-untertitel">Monatliche Abzüge</span>
     </button>
 
-    <button class="kachel" data-oeffnet="kalender" type="button">
+    <button class="kachel kachel-kal" data-oeffnet="kalender" type="button">
       <span class="kachel-icon">🗓️</span>
       <span class="kachel-titel">Kalender</span>
       <span class="kachel-untertitel">Posten pro Tag</span>
     </button>
 
   </main>
+
+  <section class="card" id="sec-posten">
+    <h2>Monatliche Abzüge</h2>
+    <ul id="posten-uebersicht"></ul>
+  </section>
 
   <section class="card" id="sec-historie">
     <h2>Letzte Transaktionen</h2>

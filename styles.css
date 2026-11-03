@@ -49,7 +49,7 @@ main { padding: .75rem; max-width: 560px; margin: 0 auto; }
 }
 .kachel:active { background: #f0f4f1; }
 .kachel-icon { font-size: 2rem; line-height: 1; }
-.kachel-titel { font-weight: 600; color: #1a5c3a; font-size: .95rem; }
+.kachel-titel { font-weight: 600; color: #5c551a; font-size: .95rem; }
 .kachel-untertitel { font-size: .75rem; color: #6b7a70; }
 
 .overlay {
@@ -74,7 +74,7 @@ main { padding: .75rem; max-width: 560px; margin: 0 auto; }
   box-shadow: 0 8px 30px rgba(0,0,0,.25);
 }
 .overlay-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: .75rem; }
-.overlay-head h2 { margin: 0; font-size: 1.05rem; color: #1a5c3a; }
+.overlay-head h2 { margin: 0; font-size: 1.05rem; color: #fff; }
 #overlay-schliessen {
   width: auto;
   margin: 0;
@@ -83,7 +83,7 @@ main { padding: .75rem; max-width: 560px; margin: 0 auto; }
   color: #1c2420;
   font-size: 1rem;
 }
-#historie { max-height: 20rem; overflow-y: auto; }
+#historie, #ausgaben-liste { max-height: 20rem; overflow-y: auto; }
 h2 { margin: 0 0 .75rem; font-size: 1.05rem; color: #1a5c3a; }
 form label { display: block; font-size: .85rem; margin: .5rem 0 .2rem; }
 input {
@@ -124,6 +124,8 @@ li {
   font-size: .95rem;
 }
 li .betrag { font-weight: 600; }
+li.abgezogen { color: #6b7a70; }
+li.abgezogen .betrag { text-decoration: line-through; }
 li .entfernen {
   width: auto;
   margin: 0;
