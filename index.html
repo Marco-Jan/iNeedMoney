@@ -2,110 +2,205 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0d0d0f">
+  <meta name="description" content="Spar-App: Konto, monatliche Posten, spontane Ausgaben – offline nutzbar.">
   <title>iNeedMoney</title>
   <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="stylesheet" href="styles.css">
-  <meta name="theme-color" content="#1a5c3a">
 </head>
 <body>
+
   <header>
-    <h1>iNeedMoney</h1>
-    <div id="saldo" class="saldo">0,00 €</div>
-    <div id="saldo-hinweis" class="hinweis"></div>
-    <button id="reset-knopf" type="button" class="reset-knopf">Alles zurücksetzen</button>
+    <p class="kopf-label">Konto</p>
+    <h1 class="saldo" id="saldo">0,00&nbsp;&euro;</h1>
+    <p class="hinweis" id="saldo-hinweis"></p>
   </header>
 
-  <div id="toast" class="toast" hidden></div>
+  <main>
+    <div id="kacheln">
+      <button class="kachel" type="button" data-oeffnet="einzahlung">
+        <span class="kachel-icon">&plus;</span>
+        <span class="kachel-titel">Einzahlen</span>
+      </button>
+      <button class="kachel" type="button" data-oeffnet="ausgabe">
+        <span class="kachel-icon">&minus;</span>
+        <span class="kachel-titel">Ausgabe</span>
+      </button>
+      <button class="kachel" type="button" data-oeffnet="posten">
+        <span class="kachel-icon" aria-hidden="true">&#9776;</span>
+        <span class="kachel-titel">Posten</span>
+      </button>
+      <button class="kachel" type="button" data-oeffnet="kalender">
+        <span class="kachel-icon" aria-hidden="true">&#9635;</span>
+        <span class="kachel-titel">Kalender</span>
+      </button>
+      <button class="kachel" type="button" data-oeffnet="ausgaben">
+        <span class="kachel-icon" aria-hidden="true">&#9650;</span>
+        <span class="kachel-titel">Ausgaben</span>
+      </button>
+      <button class="kachel" type="button" data-oeffnet="einstellungen">
+        <span class="kachel-icon" aria-hidden="true">&#9881;</span>
+        <span class="kachel-titel">Einstellungen</span>
+      </button>
+    </div>
 
-  <main id="kacheln">
-    <button class="kachel kachel-ein" data-oeffnet="einzel" type="button">
-      <span class="kachel-icon">💶</span>
-      <span class="kachel-titel">Einzahlen</span>
-      <span class="kachel-untertitel">Geld auf das Konto</span>
-    </button>
+    <section class="card" data-card="monat" data-offen="true">
+      <button class="card-kopf" type="button" aria-expanded="true" aria-controls="card-monat">
+        <h2>Dieser Monat</h2>
+        <span class="card-pfeil" aria-hidden="true"></span>
+      </button>
+      <div class="card-huelle">
+      <div class="card-inhalt" id="card-monat">
+      <div class="monat-grid">
+        <div class="monat-zelle">
+          <span class="monat-label">Eingezahlt</span>
+          <span class="monat-wert plus" id="monat-ein">0,00&nbsp;&euro;</span>
+        </div>
+        <div class="monat-zelle">
+          <span class="monat-label">Ausgegeben</span>
+          <span class="monat-wert minus" id="monat-aus">0,00&nbsp;&euro;</span>
+        </div>
+        <div class="monat-zelle">
+          <span class="monat-label">Posten bezahlt</span>
+          <span class="monat-wert minus" id="monat-posten">0,00&nbsp;&euro;</span>
+        </div>
+        <div class="monat-zelle">
+          <span class="monat-label">Frei verf&uuml;gbar</span>
+          <span class="monat-wert" id="monat-frei">0,00&nbsp;&euro;</span>
+        </div>
+      </div>
+      <p class="fussnote" id="monat-frei-hinweis"></p>
+      </div>
+      </div>
+    </section>
 
-    <button class="kachel kachel-aus" data-oeffnet="ausgabe" type="button">
-      <span class="kachel-icon">🛍️</span>
-      <span class="kachel-titel">Spontane Ausgabe</span>
-      <span class="kachel-untertitel">Mit Warnung bei zu viel</span>
-    </button>
+    <section class="card" data-card="posten" data-offen="true">
+      <button class="card-kopf" type="button" aria-expanded="true" aria-controls="card-posten">
+        <h2>Monatliche Posten</h2>
+        <span class="card-pfeil" aria-hidden="true"></span>
+      </button>
+      <div class="card-huelle">
+      <div class="card-inhalt" id="card-posten">
+        <ul id="posten-uebersicht" class="liste"></ul>
+        <p class="leer" id="posten-uebersicht-leer" hidden>Noch keine Posten angelegt.</p>
+      </div>
+      </div>
+    </section>
 
-    <button class="kachel kachel-posten" data-oeffnet="posten" type="button">
-      <span class="kachel-icon">📅</span>
-      <span class="kachel-titel">Posten</span>
-      <span class="kachel-untertitel">Monatliche Abzüge</span>
-    </button>
-
-    <button class="kachel kachel-kal" data-oeffnet="kalender" type="button">
-      <span class="kachel-icon">🗓️</span>
-      <span class="kachel-titel">Kalender</span>
-      <span class="kachel-untertitel">Posten pro Tag</span>
-    </button>
-
+    <section class="card" data-card="historie" data-offen="true">
+      <button class="card-kopf" type="button" aria-expanded="true" aria-controls="card-historie">
+        <h2>Historie</h2>
+        <span class="card-pfeil" aria-hidden="true"></span>
+      </button>
+      <div class="card-huelle">
+      <div class="card-inhalt" id="card-historie">
+        <ul id="historie" class="liste"></ul>
+        <p class="leer" id="historie-leer" hidden>Noch keine Buchungen.</p>
+      </div>
+      </div>
+    </section>
   </main>
 
-  <section class="card" id="sec-posten">
-    <h2>Monatliche Abzüge</h2>
-    <ul id="posten-uebersicht"></ul>
-  </section>
-
-  <section class="card" id="sec-historie">
-    <h2>Letzte Transaktionen</h2>
-    <ul id="historie"></ul>
-  </section>
-
+  <!-- Haupt-Overlay -->
   <div id="overlay" class="overlay" hidden>
-    <div class="overlay-card" role="dialog" aria-modal="true">
-      <header class="overlay-head">
+    <div class="overlay-card" role="dialog" aria-modal="true" aria-labelledby="overlay-titel">
+      <div class="overlay-head">
         <h2 id="overlay-titel"></h2>
-        <button id="overlay-schliessen" type="button" aria-label="Schließen">✕</button>
-      </header>
+        <button id="overlay-schliessen" type="button" aria-label="Schlie&szlig;en">&times;</button>
+      </div>
 
-      <div class="overlay-body" data-body="einzel">
-        <form id="form-einzahlung">
-          <label for="ein-betrag">Betrag (€)</label>
-          <input id="ein-betrag" type="number" inputmode="decimal" min="0.01" step="0.01" required>
+      <!-- Einzahlen -->
+      <div class="overlay-body" data-body="einzahlung" hidden>
+        <form id="form-einzahlung" novalidate>
+          <label for="ein-betrag">Betrag</label>
+          <input type="text" inputmode="decimal" id="ein-betrag" placeholder="0,00" autocomplete="off" required>
+          <label for="ein-notiz">Notiz (optional)</label>
+          <input type="text" id="ein-notiz" autocomplete="off">
           <button type="submit">Einzahlen</button>
         </form>
       </div>
 
+      <!-- Spontane Ausgabe -->
       <div class="overlay-body" data-body="ausgabe" hidden>
         <div id="ausgabe-warnung" class="warnung" hidden></div>
-        <form id="form-ausgabe">
-          <label for="aus-betrag">Betrag (€)</label>
-          <input id="aus-betrag" type="number" inputmode="decimal" min="0.01" step="0.01" required>
+        <form id="form-ausgabe" novalidate>
+          <label for="aus-betrag">Betrag</label>
+          <input type="text" inputmode="decimal" id="aus-betrag" placeholder="0,00" autocomplete="off" required>
           <label for="aus-notiz">Notiz (optional)</label>
-          <input id="aus-notiz" type="text" maxlength="60">
+          <input type="text" id="aus-notiz" autocomplete="off">
           <button type="submit">Ausgeben</button>
         </form>
+        <p class="fussnote" id="ausgabe-schwelle"></p>
       </div>
 
+      <!-- Posten -->
       <div class="overlay-body" data-body="posten" hidden>
-        <form id="form-posten">
-          <label for="post-name">Bezeichnung</label>
-          <input id="post-name" type="text" maxlength="40" required>
-          <label for="post-betrag">Betrag (€)</label>
-          <input id="post-betrag" type="number" inputmode="decimal" min="0.01" step="0.01" required>
-          <label for="post-tag">Tag im Monat</label>
-          <input id="post-tag" type="number" min="1" max="31" step="1" required>
-          <button type="submit">Posten anlegen</button>
+        <form id="form-posten" novalidate>
+          <input type="hidden" id="post-id">
+          <label for="post-name">Name</label>
+          <input type="text" id="post-name" placeholder="z.&nbsp;B. Strom" autocomplete="off" required>
+          <label for="post-betrag">Betrag</label>
+          <input type="text" inputmode="decimal" id="post-betrag" placeholder="0,00" autocomplete="off" required>
+          <label for="post-tag">Tag im Monat (1&ndash;31)</label>
+          <input type="number" id="post-tag" min="1" max="31" placeholder="28" required>
+          <button type="submit" id="post-submit">Posten hinzuf&uuml;gen</button>
+          <button type="button" id="post-abbrechen" class="sekundaer" hidden>Bearbeiten abbrechen</button>
         </form>
-        <ul id="posten-liste"></ul>
+        <h3 class="unter-titel">Angelegte Posten</h3>
+        <ul id="posten-liste" class="liste"></ul>
+        <p class="leer" id="posten-liste-leer" hidden>Noch keine Posten angelegt.</p>
       </div>
 
+      <!-- Kalender -->
       <div class="overlay-body" data-body="kalender" hidden>
         <div class="kal-nav">
-          <button id="kal-prev" type="button">‹</button>
+          <button id="kal-prev" type="button" aria-label="Vorheriger Monat">&lsaquo;</button>
           <span id="kal-monat"></span>
-          <button id="kal-next" type="button">›</button>
+          <button id="kal-next" type="button" aria-label="N&auml;chster Monat">&rsaquo;</button>
         </div>
         <div class="kal-grid" id="kal-grid"></div>
-        <p id="kal-offen" class="hinweis"></p>
+        <h3 class="unter-titel">Posten in diesem Monat</h3>
+        <ul id="kal-liste" class="liste"></ul>
+        <p class="leer" id="kal-liste-leer" hidden>Keine Posten angelegt.</p>
+        <p class="fussnote" id="kal-offen"></p>
       </div>
 
+      <!-- Ausgaben -->
+      <div class="overlay-body" data-body="ausgaben" hidden>
+        <ul id="ausgaben-liste" class="liste"></ul>
+        <p class="leer" id="ausgaben-leer" hidden>Noch keine Ausgaben erfasst.</p>
+        <p class="fussnote" id="ausgaben-summe"></p>
+      </div>
+
+      <!-- Einstellungen -->
+      <div class="overlay-body" data-body="einstellungen" hidden>
+        <p class="fussnote">Alle Daten liegen nur auf diesem Ger&auml;t. Ein Backup schreibt sie in eine Datei, die du sichern kannst.</p>
+        <button type="button" id="export-knopf" class="sekundaer">Backup exportieren</button>
+        <label for="import-datei" class="datei-label" id="import-label" role="button" tabindex="0">Backup importieren</label>
+        <input type="file" id="import-datei" accept="application/json,.json">
+        <h3 class="unter-titel gefahr-titel">Gefahrenzone</h3>
+        <button type="button" id="reset-knopf" class="gefahr">Alles zur&uuml;cksetzen</button>
+      </div>
     </div>
   </div>
+
+  <!-- Bestaetigungs-Dialog -->
+  <div id="frage" class="overlay" hidden>
+    <div class="overlay-card schmal" role="alertdialog" aria-modal="true" aria-describedby="frage-text">
+      <p id="frage-text"></p>
+      <div class="frage-knoepfe">
+        <button type="button" id="frage-nein" class="sekundaer">Abbrechen</button>
+        <button type="button" id="frage-ja" class="gefahr">Ja</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" role="status" hidden></div>
 
   <script src="app.js"></script>
 </body>

@@ -1,68 +1,279 @@
+/*
+  Logik-Test ohne Browser:  node test-logic.js
+  Teil 1 prueft die Rechenlogik (Saldo, Abzuege, Warnschwelle, Backup).
+  Teil 2 prueft den DOM-Vertrag: jede ID, die app.js erwartet, muss in
+  index.html existieren - genau der Fehler, der die App vorher lahmgelegt hat.
+*/
+
 const fs = require('fs');
+const path = require('path');
 const vm = require('vm');
 
-function makeEl() {
-  return {
-    textContent: '', innerHTML: '', className: '', hidden: false, value: '', type: '',
-    classList: { add() {}, remove() {} },
-    children: [],
-    appendChild(c) { this.children.push(c); },
-    append(...a) { this.children.push(...a); },
-    addEventListener(ev, fn) { this.listener = fn; },
-    reset() {},
-  };
+const WURZEL = __dirname;
+const appJs = fs.readFileSync(path.join(WURZEL, 'app.js'), 'utf8');
+const indexHtml = fs.readFileSync(path.join(WURZEL, 'index.html'), 'utf8');
+const css = fs.readFileSync(path.join(WURZEL, 'styles.css'), 'utf8');
+const htmlIds = new Set();
+{
+  const re = /\bid="([^"]+)"/g;
+  let m;
+  while ((m = re.exec(indexHtml))) htmlIds.add(m[1]);
 }
-const els = {};
-global.document = {
-  getElementById: id => (els[id] = els[id] || makeEl()),
-  createElement: () => makeEl(),
-  querySelectorAll: () => [],
-  addEventListener() {},
-};
+
+let fehler = 0;
+function assert(bedingung, text) {
+  if (bedingung) {
+    console.log('  ok   ' + text);
+  } else {
+    console.error('  FAIL ' + text);
+    fehler++;
+  }
+}
+function block(titel) {
+  console.log('\n' + titel);
+}
+
+// --------------------------------------------------- app.js ohne DOM laden
+
 global.localStorage = {
   _d: {},
-  getItem(k) { return this._d[k] || null; },
-  setItem(k, v) { this._d[k] = v; },
+  getItem(k) { return k in this._d ? this._d[k] : null; },
+  setItem(k, v) { this._d[k] = String(v); },
+  removeItem(k) { delete this._d[k]; },
 };
-let confirms = 0;
-global.confirm = () => { confirms++; return true; };
-global.navigator = {};
-global.location = { protocol: 'http:', origin: 'http://localhost' };
+// kein global.document: app.js laesst den UI-Teil dann bewusst aus
+vm.runInThisContext(appJs, { filename: 'app.js' });
 
-vm.runInThisContext(fs.readFileSync('E:\\myprojects\\iNeedMoney\\app.js', 'utf8'));
+const L = global.Logik;
+const gespeichert = () => JSON.parse(localStorage.getItem('inneedmoney.v1'));
+const heuteTag = new Date().getDate();
 
-const state = () => JSON.parse(localStorage.getItem('inneedmoney.v1'));
-const assert = (c, m) => { if (!c) { console.error('FAIL: ' + m); process.exit(1); } console.log('ok: ' + m); };
-const submit = id => els[id].listener({ preventDefault() {}, target: els[id] });
-const inp = id => document.getElementById(id);
+block('Betrags-Eingaben');
+assert(L.zuCent('100') === 10000, '"100" -> 10000 Cent');
+assert(L.zuCent('12,50') === 1250, '"12,50" (Komma) -> 1250 Cent');
+assert(L.zuCent('12.50') === 1250, '"12.50" (Punkt) -> 1250 Cent');
+assert(L.zuCent('1.234,56') === 123456, '"1.234,56" -> 123456 Cent');
+assert(L.zuCent(' 7 ') === 700, '" 7 " -> 700 Cent');
+assert(Number.isNaN(L.zuCent('abc')), '"abc" -> NaN');
+assert(Number.isNaN(L.zuCent('')), 'leer -> NaN');
 
-inp('ein-betrag').value = '100'; submit('form-einzahlung');
-assert(state().saldo === 10000, 'Einzahlung 100 -> Saldo 10000 Cent');
+block('Einzahlung');
+L.zuruecksetzen();
+assert(!L.einzahlen(0).ok, 'Einzahlung 0 wird abgelehnt');
+assert(!L.einzahlen(NaN).ok, 'Einzahlung NaN wird abgelehnt');
+assert(L.einzahlen(10000, 'Gehalt').ok, 'Einzahlung 100,00 EUR geht durch');
+assert(L.state.saldo === 10000, 'Saldo = 10000 Cent');
+assert(gespeichert().saldo === 10000, 'Saldo ist in localStorage persistiert');
 
-inp('post-name').value = 'Strom'; inp('post-betrag').value = '56'; inp('post-tag').value = '28';
-submit('form-posten');
-assert(state().posten.length === 1 && state().posten[0].betrag === 5600, 'Posten Strom 56 am 28. angelegt');
-assert(state().saldo === 10000, 'kein Abzug (Tag 28 in Zukunft)');
+block('Posten anlegen');
+// Tag bewusst in der Zukunft, damit nicht sofort abgerechnet wird
+const zukunftsTag = Math.min(31, heuteTag + 1);
+const r1 = L.postenSpeichern({ name: 'Strom', betrag: 5600, tag: zukunftsTag });
+assert(r1.ok, 'Posten "Strom" 56,00 EUR angelegt');
+assert(L.state.posten.length === 1, 'ein Posten im Stand');
+assert(L.state.saldo === 10000, 'kein Abzug, da Tag in der Zukunft');
+assert(!L.postenSpeichern({ name: '', betrag: 100, tag: 5 }).ok, 'Posten ohne Namen wird abgelehnt');
+assert(!L.postenSpeichern({ name: 'X', betrag: 100, tag: 40 }).ok, 'Tag 40 wird abgelehnt');
+assert(!L.postenSpeichern({ name: 'X', betrag: -5, tag: 5 }).ok, 'negativer Betrag wird abgelehnt');
 
-const c0 = confirms;
-// Regel: Warnung, wenn Betrag > floor(summeOffenerPosten / 3) = floor(5600/3) = 1866 Cent (18,66 €)
-inp('aus-betrag').value = '20'; inp('aus-notiz').value = 'Kaffee';
-submit('form-ausgabe');
-assert(confirms === c0 + 1, 'Ausgabe 20 > 18,66 (1/3 von 56) -> Warnung (confirm)');
-assert(state().saldo === 8000, 'Saldo nach Ausgabe 20 = 8000 Cent');
+block('Warnschwelle (ein Drittel der offenen Posten)');
+assert(L.offenePosten().length === 1, 'ein offener Posten');
+assert(L.warnschwelle() === 1866, 'Schwelle = floor(5600/3) = 1866 Cent');
+assert(L.pruefeAusgabe(1866).warnung === null, '18,66 EUR -> keine Warnung (genau Schwelle)');
+assert(typeof L.pruefeAusgabe(1867).warnung === 'string', '18,67 EUR -> Warnung');
+assert(!L.pruefeAusgabe(99999).ok, 'mehr als der Saldo -> Fehler, keine Buchung');
+assert(L.state.saldo === 10000, 'pruefeAusgabe bucht nichts');
 
-inp('aus-betrag').value = '10';
-submit('form-ausgabe');
-assert(confirms === c0 + 1, 'Ausgabe 10 <= 18,66 -> keine Warnung');
-assert(state().saldo === 7000, 'Saldo nach Ausgabe 10 = 7000 Cent');
+block('Ausgaben buchen');
+const a1 = L.ausgeben(2000, 'Kaffee');
+assert(a1.ok && typeof a1.warnung === 'string', '20,00 EUR gebucht, mit Warnung');
+assert(L.state.saldo === 8000, 'Saldo = 8000 Cent');
+const a2 = L.ausgeben(1000);
+assert(a2.ok && a2.warnung === null, '10,00 EUR gebucht, ohne Warnung');
+assert(L.state.saldo === 7000, 'Saldo = 7000 Cent');
+assert(!L.ausgeben(0).ok && L.state.saldo === 7000, 'Ausgabe 0 wird abgelehnt');
 
-inp('aus-betrag').value = '20';
-submit('form-ausgabe');
-assert(confirms === c0 + 2, 'Ausgabe 20 > 18,66 -> Warnung (confirm)');
-assert(state().saldo === 5000, 'Saldo nach Ausgabe 20 = 5000 Cent');
+block('Posten bearbeiten und loeschen');
+const strom = L.state.posten[0];
+assert(L.postenSpeichern({ id: strom.id, name: 'Strom neu', betrag: 6000, tag: zukunftsTag }).bearbeitet,
+  'Posten per id bearbeitet');
+assert(L.state.posten.length === 1, 'kein Duplikat entstanden');
+assert(L.state.posten[0].name === 'Strom neu' && L.state.posten[0].betrag === 6000, 'Name und Betrag geaendert');
+assert(!L.postenSpeichern({ id: 'gibtsnicht', name: 'X', betrag: 100, tag: 3 }).ok, 'unbekannte id wird abgelehnt');
+assert(L.postenLoeschen(strom.id).ok, 'Posten geloescht');
+assert(L.state.posten.length === 0, 'keine Posten mehr');
+assert(L.warnschwelle() === 0, 'ohne offene Posten ist die Schwelle 0');
+assert(L.pruefeAusgabe(5000).warnung === null, 'ohne offene Posten keine Warnung');
 
-inp('post-name').value = 'Miete'; inp('post-betrag').value = '50'; inp('post-tag').value = '1';
-submit('form-posten');
-assert(state().saldo === 0, 'Posten Miete am Tag 1 -> sofort abgezogen (Saldo 0)');
-assert(state().transaktionen.some(t => t.typ === 'posten' && t.name === 'Miete'), 'Abzug in Historie');
-console.log('ALLE TESTS OK');
+block('Faellige Posten werden genau einmal pro Monat abgezogen');
+L.zuruecksetzen();
+L.einzahlen(20000);
+L.postenSpeichern({ name: 'Miete', betrag: 5000, tag: 1 }); // Tag 1 -> heute faellig
+assert(L.state.saldo === 15000, 'Miete sofort abgezogen (Saldo 15000)');
+assert(L.state.transaktionen.some(t => t.typ === 'posten' && t.name === 'Miete'), 'Abzug steht in der Historie');
+assert(L.abrechnen() === 0, 'erneutes abrechnen() zieht nichts doppelt ab');
+assert(L.state.saldo === 15000, 'Saldo unveraendert nach zweitem abrechnen()');
+assert(L.faelligePosten(Object.keys(L.state.abgegriffen)[0]).length === 0, 'nichts mehr faellig');
+
+block('Posten am 29./30./31. in kurzen Monaten');
+assert(L.tageImMonat(2026, 1) === 28, 'Februar 2026 hat 28 Tage');
+assert(L.tageImMonat(2028, 1) === 29, 'Februar 2028 (Schaltjahr) hat 29 Tage');
+assert(L.effektiverTag(31, 2026, 1) === 28, 'Posten am 31. rutscht im Februar auf den 28.');
+assert(L.effektiverTag(31, 2028, 1) === 29, 'Posten am 31. rutscht im Schaltjahr-Februar auf den 29.');
+assert(L.effektiverTag(31, 2026, 3) === 30, 'Posten am 31. rutscht im April auf den 30.');
+assert(L.effektiverTag(15, 2026, 1) === 15, 'Tag 15 bleibt Tag 15');
+L.zuruecksetzen();
+L.einzahlen(50000);
+L.postenSpeichern({ name: 'Monatsende', betrag: 1000, tag: 31 });
+const heuteDatum = new Date();
+const letzterHeute = L.tageImMonat(heuteDatum.getFullYear(), heuteDatum.getMonth());
+const sollteAbgezogenSein = heuteDatum.getDate() >= letzterHeute;
+assert(sollteAbgezogenSein ? L.state.saldo === 49000 : L.state.saldo === 50000,
+  'Posten am 31. wird am letzten Monatstag faellig, davor nicht');
+assert(L.offenePosten().length + L.state.transaktionen.filter(t => t.typ === 'posten').length === 1,
+  'der Posten ist entweder offen oder abgezogen - nie beides und nie keines');
+
+block('"offen" und "bezahlt" widersprechen sich nicht');
+L.zuruecksetzen();
+L.einzahlen(100000);
+const kuenftig = Math.min(31, new Date().getDate() + 1);
+L.postenSpeichern({ name: 'Spaeter', betrag: 3000, tag: kuenftig });
+const spaeter = L.state.posten[0];
+// Posten von Hand als abgezogen markieren, obwohl sein Tag noch kommt -
+// genau der Fall, in dem Startseite und Kalender frueher auseinanderliefen
+const mk = Object.keys(L.state.abgegriffen)[0] ||
+  new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0');
+L.state.abgegriffen[mk] = (L.state.abgegriffen[mk] || []).concat(spaeter.id);
+assert(L.offenePosten().length === 0,
+  'ein bereits abgezogener Posten gilt nicht mehr als offen, auch wenn sein Tag noch kommt');
+assert(L.warnschwelle() === 0, 'er zaehlt dann auch nicht in die Warnschwelle');
+L.state.abgegriffen[mk] = [];
+assert(L.offenePosten().length === 1, 'ohne Abzug ist er wieder offen');
+assert(L.warnschwelle() === 1000, 'und zaehlt wieder in die Warnschwelle');
+
+block('Monatsbilanz');
+L.zuruecksetzen();
+L.einzahlen(20000);
+L.postenSpeichern({ name: 'Miete', betrag: 5000, tag: 1 });
+const b = L.monatsBilanz();
+assert(b.einzahlungen === 20000, 'Einzahlungen des Monats = 20000');
+assert(b.posten === 5000, 'Posten des Monats = 5000');
+assert(b.ausgaben === 0, 'keine spontanen Ausgaben');
+assert(b.frei === 15000, 'frei verfuegbar = Saldo minus offene Posten');
+
+block('Backup: Export und Import');
+const sicherung = L.exportDaten();
+assert(JSON.parse(sicherung).daten.saldo === 15000, 'Export enthaelt den Saldo');
+L.zuruecksetzen();
+assert(L.state.saldo === 0, 'Reset leert den Stand');
+assert(L.importDaten(sicherung).ok, 'Import des Backups gelingt');
+assert(L.state.saldo === 15000, 'Saldo aus dem Backup wiederhergestellt');
+assert(L.state.posten.length === 1 && L.state.posten[0].name === 'Miete', 'Posten wiederhergestellt');
+assert(!L.importDaten('kein json').ok, 'Mist-Datei wird abgelehnt');
+assert(!L.importDaten('{"was":"anderes"}').ok, 'fremdes JSON wird abgelehnt');
+assert(L.state.saldo === 15000, 'fehlgeschlagener Import laesst die Daten in Ruhe');
+
+block('Kaputte gespeicherte Daten');
+const kaputt = L.normalisiere({ saldo: 'viel', posten: 'nein', transaktionen: null, abgegriffen: 7 });
+assert(kaputt.saldo === 0 && Array.isArray(kaputt.posten) && kaputt.posten.length === 0,
+  'Unsinn wird zu einem leeren, gueltigen Stand');
+localStorage.setItem('inneedmoney.v1', '{nicht json');
+L.lade();
+assert(typeof L.state.saldo === 'number', 'korruptes localStorage stuerzt nicht ab');
+
+// ------------------------------------------------- DOM-Vertrag (Teil 2)
+
+block('DOM-Vertrag: app.js erwartet nur IDs, die es in index.html gibt');
+const idsBlock = appJs.match(/const IDS = \[([\s\S]*?)\];/);
+assert(Boolean(idsBlock), 'IDS-Liste in app.js gefunden');
+if (idsBlock) {
+  const erwartet = (idsBlock[1].match(/'([^']+)'/g) || []).map(s => s.slice(1, -1));
+  assert(erwartet.length > 20, erwartet.length + ' erwartete IDs eingesammelt');
+  const vorhanden = new Set((indexHtml.match(/\bid="([^"]+)"/g) || [])
+    .map(s => s.replace(/\bid="|"/g, '')));
+  const fehlend = erwartet.filter(id => !vorhanden.has(id));
+  assert(fehlend.length === 0, fehlend.length ? 'fehlende IDs im HTML: ' + fehlend.join(', ')
+    : 'alle von app.js erwarteten IDs existieren im HTML');
+}
+
+block('DOM-Vertrag: jeder knoten[...]-Zugriff steht auch in der IDS-Liste');
+if (idsBlock) {
+  const erwartet = new Set((idsBlock[1].match(/'([^']+)'/g) || []).map(s => s.slice(1, -1)));
+  const benutzt = [];
+  const reKnoten = /knoten\['([^']+)'\]/g;
+  let treffer;
+  while ((treffer = reKnoten.exec(appJs))) {
+    if (!benutzt.includes(treffer[1])) benutzt.push(treffer[1]);
+  }
+  assert(benutzt.length > 20, benutzt.length + ' benutzte Knoten gefunden');
+  const unbekannt = benutzt.filter(id => !erwartet.has(id));
+  assert(unbekannt.length === 0, unbekannt.length ? 'nicht in IDS gesammelt: ' + unbekannt.join(', ')
+    : 'alle benutzten Knoten werden beim Start geholt');
+  const direkt = (appJs.match(/document\.getElementById\('([^']+)'\)/g) || []);
+  assert(direkt.length <= 1, 'kein ungeprueftes document.getElementById im UI-Code (nur in el())');
+}
+
+block('DOM-Vertrag: jede Kachel oeffnet ein vorhandenes Overlay');
+const werte = (quelle, attribut) => {
+  const re = new RegExp(attribut + '="([^"]+)"', 'g');
+  const raus = [];
+  let m;
+  while ((m = re.exec(quelle))) raus.push(m[1]);
+  return raus;
+};
+const kacheln = werte(indexHtml, 'data-oeffnet');
+const bodies = new Set(werte(indexHtml, 'data-body'));
+assert(kacheln.length > 0, kacheln.length + ' Kacheln gefunden');
+const ohneZiel = kacheln.filter(k => !bodies.has(k));
+assert(ohneZiel.length === 0, ohneZiel.length ? 'Kacheln ohne Overlay: ' + ohneZiel.join(', ')
+  : 'alle Kacheln haben ein Overlay');
+const titelBlock = appJs.match(/const OVERLAY_TITEL = \{([\s\S]*?)\};/);
+if (titelBlock) {
+  const ohneTitel = kacheln.filter(k => !new RegExp('\\b' + k + ':').test(titelBlock[1]));
+  assert(ohneTitel.length === 0, ohneTitel.length ? 'Kacheln ohne Titel: ' + ohneTitel.join(', ')
+    : 'alle Kacheln haben einen Overlay-Titel');
+}
+const ohneKachel = [...bodies].filter(b => !kacheln.includes(b));
+assert(ohneKachel.length === 0, ohneKachel.length ? 'Overlays, die niemand oeffnet: ' + ohneKachel.join(', ')
+  : 'kein totes Overlay');
+
+block('DOM-Vertrag: aufklappbare Cards');
+const cardNamen = werte(indexHtml, 'data-card');
+assert(cardNamen.length === 3, cardNamen.length + ' aufklappbare Cards gefunden');
+for (const name of cardNamen) {
+  // Abschnitt dieser Card aus dem HTML schneiden
+  const start = indexHtml.indexOf('data-card="' + name + '"');
+  const ende = indexHtml.indexOf('</section>', start);
+  const abschnitt = indexHtml.slice(start, ende);
+  assert(/class="card-kopf"/.test(abschnitt), 'Card "' + name + '" hat einen .card-kopf zum Klicken');
+  assert(/aria-expanded="/.test(abschnitt), 'Card "' + name + '" hat aria-expanded');
+  assert(/class="card-huelle"/.test(abschnitt) && /class="card-inhalt"/.test(abschnitt),
+    'Card "' + name + '" hat Huelle und Inhalt zum Einklappen');
+  const steuert = (abschnitt.match(/aria-controls="([^"]+)"/) || [])[1];
+  assert(steuert && htmlIds.has(steuert), 'aria-controls von "' + name + '" zeigt auf eine echte ID');
+}
+assert(/\[data-card\]/.test(appJs), 'app.js verdrahtet die Cards ueber [data-card]');
+assert(/data-offen/.test(appJs) && /data-offen/.test(indexHtml), 'data-offen wird in HTML und JS benutzt');
+for (const regel of ['.card-kopf', '.card-huelle', '.card-inhalt', '.card-pfeil']) {
+  assert(css.includes(regel), 'styles.css kennt ' + regel);
+}
+assert(/data-offen="false"\]\s*\.card-huelle/.test(css), 'CSS klappt bei data-offen="false" zu');
+assert(appJs.includes('inneedmoney.ui.v1'), 'Auf-/Zu-Zustand liegt in einem eigenen Storage-Schluessel');
+assert(!appJs.includes("state.offen"), 'der Auf-/Zu-Zustand haengt nicht in den Spardaten');
+
+block('Offline-Vertrag: keine externen Abhaengigkeiten');
+const extern = indexHtml.match(/(src|href)="https?:\/\/[^"]+"/g) || [];
+assert(extern.length === 0, extern.length ? 'externe Referenzen: ' + extern.join(', ') : 'index.html laedt nichts von aussen');
+assert(/rel="manifest"/.test(indexHtml), 'manifest.json ist verlinkt');
+const sw = fs.readFileSync(path.join(WURZEL, 'sw.js'), 'utf8');
+for (const datei of ['index.html', 'styles.css', 'app.js', 'manifest.json']) {
+  assert(sw.includes(datei), 'Service Worker cacht ' + datei);
+}
+
+// ------------------------------------------------------------------ Fazit
+
+if (fehler) {
+  console.error('\n' + fehler + ' Test(s) fehlgeschlagen.');
+  process.exit(1);
+}
+console.log('\nALLE TESTS OK');
