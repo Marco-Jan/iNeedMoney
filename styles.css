@@ -16,8 +16,8 @@
   --gold-schimmer: rgba(212, 175, 55, 0.14);
 
   --text: #f2f0ea;
-  --text-leise: #8e8b84;
-  --text-still: #5f5d58;
+  --text-leise: #a9a69e;
+  --text-still: #87847c;
   --rot: #e05a5a;
   --gruen: #5fb87a;
 
@@ -543,7 +543,8 @@ label + input {
 }
 
 input[type="text"],
-input[type="number"] {
+input[type="number"],
+input[type="date"] {
   width: 100%;
   background: var(--surface-tief);
   border: 1px solid transparent;
@@ -562,7 +563,8 @@ input::placeholder {
 }
 
 input[type="text"]:focus,
-input[type="number"]:focus {
+input[type="number"]:focus,
+input[type="date"]:focus {
   border-color: rgba(212, 175, 55, 0.55);
 }
 
@@ -879,9 +881,54 @@ select:focus {
   border-color: rgba(212, 175, 55, 0.55);
 }
 
-input[type="date"] {
-  /* Kalender-Symbol des Browsers in Gold statt Dunkelgrau */
+/* Dunkle Browser-Oberflaechen: Datums-Popup und Auswahlliste */
+input[type="date"],
+select {
   color-scheme: dark;
+}
+
+input[type="date"] {
+  -webkit-appearance: none;
+  appearance: none;
+  min-height: 3.2rem;
+  text-align: left;
+}
+
+input[type="date"]::-webkit-date-and-time-value {
+  text-align: left;
+}
+
+/* Kalender-Symbol des Browsers in Gold */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  filter: invert(72%) sepia(52%) saturate(560%) hue-rotate(5deg) brightness(95%);
+}
+
+select option {
+  background: var(--surface-hoch);
+  color: var(--text);
+}
+
+/* Zahlenfelder ohne Hochzaehl-Pfeile */
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Name und Betrag brauchen die volle Breite, die Knoepfe bekommen eine eigene Zeile */
+#posten-liste li {
+  flex-wrap: wrap;
+}
+
+#posten-liste .aktionen {
+  flex-basis: 100%;
+  justify-content: flex-end;
 }
 
 .marke-ruhig {

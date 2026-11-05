@@ -951,6 +951,10 @@ if (istBrowser) {
     const start = knoten['post-start'].value;
     const feld = knoten['post-vorschau'];
 
+    const [optMonat, optWoche] = knoten['post-einheit'].options;
+    optMonat.text = intervall === 1 ? 'Monat' : 'Monate';
+    optWoche.text = intervall === 1 ? 'Woche' : 'Wochen';
+
     if (!Number.isFinite(intervall) || intervall < 1) { feld.textContent = ''; return; }
     if (istWoche && !start) { feld.textContent = 'Wähle einen ersten Termin.'; return; }
     if (!istWoche && !(tag >= 1 && tag <= 31)) { feld.textContent = ''; return; }

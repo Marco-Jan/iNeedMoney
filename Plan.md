@@ -58,8 +58,8 @@ prüfen, dass UI und HTML zueinander passen.
         mitbringt. Animation über `grid-template-rows: 1fr → 0fr`, mit
         `@supports`-Rückfall für ältere Browser.
 - [x] **Offline/PWA**: `manifest.json` (verlinkt!) + Service Worker (`sw.js`, Cache
-      `inneedmoney-v2`): Navigation „Netz zuerst, Cache als Rückfall", Assets
-      „Cache zuerst". Alle Assets lokal.
+      `inneedmoney-v4`): Navigation und Assets „Netz zuerst, Cache als Rückfall",
+      damit HTML, CSS und JS nach einem Deploy zusammenpassen. Alle Assets lokal.
 - [x] **Sprache**: UI auf Deutsch.
 - [x] **Design**: Neomorphismus in Schwarz mit Gold-Akzenten, Variablen in
       `:root`, reduzierte Animationen bei `prefers-reduced-motion`.
@@ -106,8 +106,8 @@ bei dem ist das Geld trotzdem abgebucht worden; jeder Abzug landet mit seinem
   Mit `box-sizing: border-box` fällt die Höhe nie unter das Padding — die
   `0fr`-Zeile ist zwar 0 hoch, das Padding bleibt als Streifen stehen, in dem
   der Inhalt durchscheint. Der Abstand nach unten kommt deshalb vom letzten Kind.
-- Nach Änderungen an CSS/JS liefert der Service Worker erst einmal die alte
-  Datei aus dem Cache. Beim Testen Cache leeren oder den SW abmelden.
+- Formularfelder einzeln prüfen: `input[type="date"]` braucht eigene Regeln, es
+  fällt nicht unter die Selektoren für Text- und Zahlenfelder.
 
 ## Testen
 

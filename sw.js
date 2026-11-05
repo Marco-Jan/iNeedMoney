@@ -1,4 +1,4 @@
-const CACHE = 'inneedmoney-v3';
+const CACHE = 'inneedmoney-v4';
 const APP_SHELL = [
   './',
   './index.html',
@@ -44,17 +44,17 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // Assets: Cache zuerst, im Hintergrund auffrischen
+  // Assets ebenfalls Netz zuerst: sonst passt frisches HTML nicht zu altem CSS/JS.
+  // Offline greift der Cache, und jede erfolgreiche Antwort haelt ihn aktuell.
   e.respondWith(
-    caches.match(req).then(cached => {
-      const ausNetz = fetch(req).then(resp => {
+    fetch(req, { cache: 'no-cache' })
+      .then(resp => {
         if (resp && resp.ok) {
           const klon = resp.clone();
           caches.open(CACHE).then(c => c.put(req, klon));
         }
         return resp;
-      });
-      return cached || ausNetz.catch(() => Response.error());
-    })
+      })
+      .catch(() => caches.match(req).then(c => c || Response.error()))
   );
 });
