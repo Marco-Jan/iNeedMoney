@@ -839,3 +839,58 @@ input:focus-visible,
 }
 
 .toast { cursor: pointer; }
+
+/* Wiederholung: Zahl und Einheit nebeneinander */
+.feld-paar {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 0.6rem;
+  margin-bottom: 1.1rem;
+}
+
+.feld-paar input,
+.feld-paar select {
+  margin-bottom: 0;
+}
+
+select {
+  width: 100%;
+  background: var(--surface-tief);
+  border: 1px solid transparent;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-klein);
+  color: var(--text);
+  font: inherit;
+  font-size: 1rem;
+  box-shadow: var(--gedrueckt);
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  /* Chevron als Inline-SVG - kein externes Bild, bleibt offline-tauglich */
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23d4af37' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 1rem center;
+  background-size: 10px 6px;
+  padding-right: 2.5rem;
+}
+
+select:focus {
+  border-color: rgba(212, 175, 55, 0.55);
+}
+
+input[type="date"] {
+  /* Kalender-Symbol des Browsers in Gold statt Dunkelgrau */
+  color-scheme: dark;
+}
+
+.marke-ruhig {
+  color: var(--text-still);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+#post-vorschau {
+  margin-top: -0.4rem;
+  margin-bottom: 0.4rem;
+}

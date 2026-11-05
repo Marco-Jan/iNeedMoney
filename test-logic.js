@@ -113,7 +113,7 @@ assert(L.state.saldo === 15000, 'Miete sofort abgezogen (Saldo 15000)');
 assert(L.state.transaktionen.some(t => t.typ === 'posten' && t.name === 'Miete'), 'Abzug steht in der Historie');
 assert(L.abrechnen() === 0, 'erneutes abrechnen() zieht nichts doppelt ab');
 assert(L.state.saldo === 15000, 'Saldo unveraendert nach zweitem abrechnen()');
-assert(L.faelligePosten(Object.keys(L.state.abgegriffen)[0]).length === 0, 'nichts mehr faellig');
+assert(L.state.posten[0].naechster === 1, 'der Zaehler steht auf dem naechsten Termin');
 
 block('Posten am 29./30./31. in kurzen Monaten');
 assert(L.tageImMonat(2026, 1) === 28, 'Februar 2026 hat 28 Tage');
@@ -136,20 +136,124 @@ assert(L.offenePosten().length + L.state.transaktionen.filter(t => t.typ === 'po
 block('"offen" und "bezahlt" widersprechen sich nicht');
 L.zuruecksetzen();
 L.einzahlen(100000);
-const kuenftig = Math.min(31, new Date().getDate() + 1);
+const kuenftig = Math.min(28, new Date().getDate() + 1);
 L.postenSpeichern({ name: 'Spaeter', betrag: 3000, tag: kuenftig });
 const spaeter = L.state.posten[0];
-// Posten von Hand als abgezogen markieren, obwohl sein Tag noch kommt -
-// genau der Fall, in dem Startseite und Kalender frueher auseinanderliefen
-const mk = Object.keys(L.state.abgegriffen)[0] ||
-  new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0');
-L.state.abgegriffen[mk] = (L.state.abgegriffen[mk] || []).concat(spaeter.id);
+assert(L.offenePosten().length === 1, 'der Posten ist offen, sein Tag kommt noch');
+assert(L.warnschwelle() === 1000, 'und zaehlt in die Warnschwelle');
+// Termin von Hand als gebucht markieren - frueher liefen Startseite und
+// Kalender hier auseinander, weil der eine raete und der andere nachsah
+spaeter.naechster = 1;
 assert(L.offenePosten().length === 0,
-  'ein bereits abgezogener Posten gilt nicht mehr als offen, auch wenn sein Tag noch kommt');
-assert(L.warnschwelle() === 0, 'er zaehlt dann auch nicht in die Warnschwelle');
-L.state.abgegriffen[mk] = [];
-assert(L.offenePosten().length === 1, 'ohne Abzug ist er wieder offen');
-assert(L.warnschwelle() === 1000, 'und zaehlt wieder in die Warnschwelle');
+  'ein bereits gebuchter Termin gilt nicht mehr als offen, auch wenn sein Tag noch kommt');
+assert(L.warnschwelle() === 0, 'er zaehlt dann auch nicht mehr in die Warnschwelle');
+spaeter.naechster = 0;
+assert(L.offenePosten().length === 1, 'zurueckgesetzt ist er wieder offen');
+
+block('Wiederholung: alle N Wochen');
+L.zuruecksetzen();
+L.einzahlen(500000);
+// Start bewusst in der Zukunft, damit nichts sofort gebucht wird
+const inZukunft = new Date();
+inZukunft.setDate(inZukunft.getDate() + 3);
+const startIso = L.isoVon(inZukunft);
+const rw = L.postenSpeichern({
+  name: 'Bahncard', betrag: 1500, rhythmus: 'woche', intervall: 4, start: startIso,
+});
+assert(rw.ok, 'Posten "alle 4 Wochen" angelegt');
+const woche = L.state.posten[0];
+assert(woche.rhythmus === 'woche' && woche.intervall === 4, 'Rhythmus und Intervall gespeichert');
+const t0 = L.terminFuerIndex(woche, 0);
+const t1 = L.terminFuerIndex(woche, 1);
+const t2 = L.terminFuerIndex(woche, 2);
+assert(L.isoVon(t0) === startIso, 'Termin 0 ist der Starttermin');
+assert(Math.round((t1 - t0) / 86400000) === 28, 'Termin 1 liegt 28 Tage spaeter');
+assert(Math.round((t2 - t1) / 86400000) === 28, 'Termin 2 wieder 28 Tage spaeter');
+assert(t0.getDay() === t1.getDay() && t1.getDay() === t2.getDay(),
+  'alle Termine fallen auf denselben Wochentag');
+assert(!L.postenSpeichern({ name: 'X', betrag: 100, rhythmus: 'woche', intervall: 2 }).ok,
+  'Wochen-Posten ohne Starttermin wird abgelehnt');
+assert(!L.postenSpeichern({ name: 'X', betrag: 100, rhythmus: 'woche', intervall: 0, start: startIso }).ok,
+  'Intervall 0 wird abgelehnt');
+assert(!L.postenSpeichern({ name: 'X', betrag: 100, rhythmus: 'monat', intervall: 99, tag: 5 }).ok,
+  'Intervall 99 wird abgelehnt');
+
+block('Wiederholung: alle N Monate');
+L.zuruecksetzen();
+L.einzahlen(500000);
+L.postenSpeichern({ name: 'Versicherung', betrag: 12000, rhythmus: 'monat', intervall: 2, tag: 15 });
+const zwei = L.state.posten[0];
+const m0 = L.terminFuerIndex(zwei, 0);
+const m1 = L.terminFuerIndex(zwei, 1);
+const m2 = L.terminFuerIndex(zwei, 2);
+const monatsAbstand = (a, b) => (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
+assert(monatsAbstand(m0, m1) === 2, 'zwei Monate bis zum naechsten Termin');
+assert(monatsAbstand(m1, m2) === 2, 'und wieder zwei Monate');
+assert(m0.getDate() === 15 && m1.getDate() === 15 && m2.getDate() === 15, 'immer am 15.');
+
+block('Posten am 31. bleibt nach einem kurzen Monat auf dem 31.');
+// Der Klassiker: vom gebuchten Termin weiterzurechnen laesst einen Posten
+// nach dem Februar dauerhaft auf dem 28. haengen.
+const amEnde = { rhythmus: 'monat', intervall: 1, tag: 31, start: '2026-01-31' };
+const folge = [0, 1, 2, 3].map(k => L.isoVon(L.terminFuerIndex(amEnde, k)));
+assert(folge[0] === '2026-01-31', 'Januar: 31.');
+assert(folge[1] === '2026-02-28', 'Februar: auf den 28. gerutscht');
+assert(folge[2] === '2026-03-31', 'Maerz: wieder der 31., nicht der 28.');
+assert(folge[3] === '2026-04-30', 'April: der 30.');
+
+block('Nachbuchen: App laenger nicht geoeffnet');
+L.zuruecksetzen();
+L.einzahlen(500000);
+// Posten, der vor drei Monaten angefangen hat und seitdem nie gebucht wurde
+const vorMonaten = new Date();
+vorMonaten.setMonth(vorMonaten.getMonth() - 3);
+vorMonaten.setDate(1);
+L.state.posten.push({
+  id: 'alt1', name: 'Rueckstand', betrag: 10000,
+  rhythmus: 'monat', intervall: 1, tag: 1, start: L.isoVon(vorMonaten), naechster: 0,
+});
+const nachgebucht = L.abrechnen();
+assert(nachgebucht === 4, 'vier faellige Termine nachgebucht (3 Monate zurueck + aktueller)');
+assert(L.state.saldo === 500000 - 40000, 'Saldo um alle vier Termine gemindert');
+const daten = L.state.transaktionen.filter(t => t.name === 'Rueckstand').map(t => t.datum);
+assert(new Set(daten).size === 4, 'jeder Abzug hat sein eigenes, echtes Datum');
+assert(daten.every(d => d.endsWith('-01')), 'alle am 1. des jeweiligen Monats');
+assert(L.abrechnen() === 0, 'erneutes Abrechnen bucht nichts nach');
+
+block('Wochen-Posten kann zweimal im selben Monat fallen');
+L.zuruecksetzen();
+L.einzahlen(500000);
+// Start am 1. eines 31-Tage-Monats, alle 2 Wochen -> 1., 15., 29.
+const dreimal = { rhythmus: 'woche', intervall: 2, tag: 1, start: '2026-01-01' };
+const imJanuar = L.termineImZeitraum(dreimal, new Date(2026, 0, 1), new Date(2026, 0, 31));
+assert(imJanuar.length === 3, 'drei Termine im Januar, nicht einer');
+assert(imJanuar.map(t => t.datum.getDate()).join(',') === '1,15,29', 'am 1., 15. und 29.');
+
+block('Migration alter Daten ohne Wiederholung');
+const altStand = {
+  saldo: 100000,
+  posten: [{ id: 'p1', name: 'Miete', betrag: 50000, tag: 1 }],
+  transaktionen: [],
+  abgegriffen: {},
+};
+const jetztKey = new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0');
+altStand.abgegriffen[jetztKey] = ['p1'];
+const migriert = L.normalisiere(altStand);
+assert(migriert.posten[0].rhythmus === 'monat', 'alter Posten wird zum Monats-Rhythmus');
+assert(migriert.posten[0].intervall === 1, 'Intervall 1');
+assert(typeof migriert.posten[0].start === 'string', 'Startdatum gesetzt');
+assert(migriert.posten[0].naechster === 1,
+  'bereits abgezogener Posten steht auf dem naechsten Termin - wird nicht doppelt gebucht');
+const altStand2 = JSON.parse(JSON.stringify(altStand));
+altStand2.abgegriffen = {};
+assert(L.normalisiere(altStand2).posten[0].naechster === 0,
+  'noch nicht abgezogener Posten startet bei Termin 0');
+
+block('Rhythmus als Text');
+assert(L.rhythmusText({ rhythmus: 'monat', intervall: 1, tag: 28 }) === 'monatlich am 28.', 'monatlich');
+assert(L.rhythmusText({ rhythmus: 'monat', intervall: 2, tag: 5 }) === 'alle 2 Monate am 5.', 'alle 2 Monate');
+assert(L.rhythmusText({ rhythmus: 'woche', intervall: 1 }) === 'woechentlich'.replace('oe', 'ö'), 'woechentlich');
+assert(L.rhythmusText({ rhythmus: 'woche', intervall: 4 }) === 'alle 4 Wochen', 'alle 4 Wochen');
 
 block('Monatsbilanz');
 L.zuruecksetzen();

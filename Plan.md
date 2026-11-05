@@ -6,7 +6,12 @@ Wichtigste Anforderung: **muss offline am Handy funktionieren** → keine extern
 ## Modell
 
 - **Einzahlung**: Geld wird ins Konto eingezahlt (Startpunkt des Sparens).
-- **Posten**: wiederkehrende monatliche Abzüge (z. B. 56 € Strom am 28.). Jeder Posten = Betrag + Tag im Monat, zieht jeden Monat ab.
+- **Posten**: wiederkehrende Abzüge mit einstellbarem Rhythmus:
+  - **alle N Monate** am Tag X (z. B. 56 € Strom monatlich am 28., oder eine
+    Versicherung alle 2 Monate am 20.)
+  - **alle N Wochen** ab einem Starttermin (z. B. 80 € Haushaltsgeld alle
+    2 Wochen). Wochen-Rhythmen wandern durchs Jahr und können zweimal im
+    selben Monat fallen.
 - **Rest**: alles, was nicht reserviert ist → für spontane Ausgaben („frei verfügbar").
 - **Warnung**: Bei spontaner Ausgabe warnen, wenn der Betrag > 1/3 der Summe der noch offenen Posten (künftige Tage im aktuellen Monat) ist.
 
@@ -29,8 +34,9 @@ prüfen, dass UI und HTML zueinander passen.
 
 - [x] **Grundgerüst**: `index.html`, `styles.css`, `app.js` — statisch, ohne Build-Schritt.
 - [x] **Datenmodell** (localStorage, Key `inneedmoney.v1`, Beträge als Integer-Cent):
-  - `saldo`, `posten` (id, name, betrag, tag), `transaktionen` (typ, betrag, datum, name),
-    `abgegriffen` (pro `JJJJ-MM` die ids der bereits abgezogenen Posten)
+  - `saldo`, `transaktionen` (typ, betrag, datum, name) und
+    `posten` (id, name, betrag, rhythmus `'monat'|'woche'`, intervall, tag,
+    start, naechster — siehe „Abrechnung")
   - gespeicherte Daten werden beim Laden über `normalisiere()` geprüft → kaputte
     oder fremde Dateien legen die App nicht lahm
 - [x] **UI**:
@@ -61,17 +67,35 @@ prüfen, dass UI und HTML zueinander passen.
 
 ## Abrechnung (Details)
 
-- Beim Start (`abrechnen()`): Posten, deren **effektiver Tag** ≤ heute ist und deren
-  id nicht in `abgegriffen[monatsKey]` steht, werden vom Saldo abgezogen und in die
-  Historie geschrieben.
-- **Effektiver Tag**: `min(tag, Tage im Monat)`. Ein Posten am 31. wird im Februar
-  am 28. (bzw. 29.) fällig — sonst würde er in kurzen Monaten nie abgezogen.
-- Neue Posten, deren Tag im laufenden Monat bereits liegt, werden beim Anlegen sofort abgezogen.
-- Warnschwelle: `betrag > floor(summeOffenerPosten / 3)` → Warnkasten + Bestätigungs-Dialog.
-- **„Offen" vs. „bezahlt" kommt immer aus `abgegriffen`**, nie aus „Tag liegt in
-  der Vergangenheit". Im Normalbetrieb ist beides deckungsgleich, weil
-  `abrechnen()` beim Start alles Fällige abzieht — läuft es doch auseinander,
-  widersprechen sich sonst Startseite und Kalender.
+Jeder Posten zählt seine Termine über einen **Index ab seinem Startdatum**
+durch; `naechster` ist der Index des ersten noch nicht gebuchten Termins.
+
+    termin(k) = k-ter Termin seit p.start
+
+- **Monats-Rhythmus**: `start`-Monat + k × `intervall` Monate, am Tag
+  `min(tag, Tage im Monat)`.
+- **Wochen-Rhythmus**: `start` + k × `intervall` × 7 Tage.
+
+`abrechnen()` bucht alles, dessen Termin ≤ heute ist, und zählt `naechster`
+hoch — auch mehrere Termine auf einmal. Wer die App zwei Monate nicht öffnet,
+bei dem ist das Geld trotzdem abgebucht worden; jeder Abzug landet mit seinem
+**echten Termin** in der Historie, nicht mit dem heutigen Datum.
+
+- Neue Monats-Posten starten im **laufenden Monat**. Liegt der Tag schon
+  hinter uns, wird sofort abgezogen (wie vor den Wiederholungen).
+- **Warum ein Index und kein „nächstes Fälligkeitsdatum"**: Rechnet man vom
+  zuletzt gebuchten Termin weiter, bleibt ein Posten am 31., der im Februar
+  auf den 28. gerutscht ist, ab da dauerhaft auf dem 28. hängen. Über den
+  Index wird immer vom Startmonat aus gerechnet.
+- **Warum kein `abgegriffen` mehr**: Das war pro Kalendermonat organisiert und
+  kann „alle 4 Wochen" nicht abbilden. Alte Stände werden beim Laden migriert
+  (`postenNormalisieren`), ohne etwas doppelt zu buchen.
+- Warnschwelle: `betrag > floor(summeOffenerTermine / 3)` → Warnkasten +
+  Bestätigungs-Dialog. Gezählt werden **Termine**, nicht Posten — ein
+  14-Tage-Posten zählt dreimal, wenn er dreimal im Monat fällt.
+- **„Offen" vs. „bezahlt" kommt immer aus dem Zähler** (`index < naechster`),
+  nie aus „Termin liegt in der Vergangenheit" — sonst widersprechen sich
+  Startseite und Kalender.
 
 ## CSS-Fallen, die hier schon zugeschlagen haben
 

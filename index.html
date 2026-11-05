@@ -81,7 +81,7 @@
 
     <section class="card" data-card="posten" data-offen="true">
       <button class="card-kopf" type="button" aria-expanded="true" aria-controls="card-posten">
-        <h2>Monatliche Posten</h2>
+        <h2>Wiederkehrende Posten</h2>
         <span class="card-pfeil" aria-hidden="true"></span>
       </button>
       <div class="card-huelle">
@@ -146,8 +146,27 @@
           <input type="text" id="post-name" placeholder="z.&nbsp;B. Strom" autocomplete="off" required>
           <label for="post-betrag">Betrag</label>
           <input type="text" inputmode="decimal" id="post-betrag" placeholder="0,00" autocomplete="off" required>
-          <label for="post-tag">Tag im Monat (1&ndash;31)</label>
-          <input type="number" id="post-tag" min="1" max="31" placeholder="28" required>
+
+          <label for="post-intervall">Wiederholt sich alle</label>
+          <div class="feld-paar">
+            <input type="number" id="post-intervall" min="1" max="52" value="1" inputmode="numeric">
+            <select id="post-einheit">
+              <option value="monat">Monate</option>
+              <option value="woche">Wochen</option>
+            </select>
+          </div>
+
+          <div id="post-tag-feld">
+            <label for="post-tag">Tag im Monat (1&ndash;31)</label>
+            <input type="number" id="post-tag" min="1" max="31" placeholder="28" inputmode="numeric">
+          </div>
+
+          <div id="post-start-feld" hidden>
+            <label for="post-start">Erster Termin</label>
+            <input type="date" id="post-start">
+          </div>
+
+          <p class="fussnote" id="post-vorschau"></p>
           <button type="submit" id="post-submit">Posten hinzuf&uuml;gen</button>
           <button type="button" id="post-abbrechen" class="sekundaer" hidden>Bearbeiten abbrechen</button>
         </form>
