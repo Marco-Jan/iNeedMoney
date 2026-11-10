@@ -1,12 +1,16 @@
-const CACHE = 'inneedmoney-v9';
+const CACHE = 'inneedmoney-v10';
 const APP_SHELL = [
   './',
   './index.html',
   './styles.css',
   './app.js',
   './manifest.json',
+  './icon.svg',
+  './favicon-32.png',
+  './apple-touch-icon.png',
   './icon-192.png',
   './icon-512.png',
+  './icon-maskable-512.png',
 ];
 
 self.addEventListener('install', e => {

@@ -945,6 +945,19 @@ for (const id of ['form-sofort', 'so-name', 'so-scan', 'so-preis', 'so-menge', '
 }
 assert(/data-oeffnet="sofort"/.test(indexHtml), 'das Sofortkauf-Blatt hat einen Oeffner');
 
+block('Icons: alles, was verlinkt ist, liegt im Repo und im Offline-Cache');
+{
+  const manifestIcons = JSON.parse(fs.readFileSync(path.join(__dirname, 'manifest.json'), 'utf8')).icons.map(i => i.src);
+  const kopfIcons = [...indexHtml.matchAll(/<link rel="(?:icon|apple-touch-icon)" href="([^"]+)"/g)].map(m => m[1]);
+  const swText = fs.readFileSync(path.join(__dirname, 'sw.js'), 'utf8');
+  assert(kopfIcons.length >= 2 && manifestIcons.length >= 3, 'Favicon, Apple-Icon und Manifest-Icons sind eingetragen');
+  for (const datei of new Set([...manifestIcons, ...kopfIcons])) {
+    assert(fs.existsSync(path.join(__dirname, datei)), datei + ' existiert');
+    assert(swText.includes("'./" + datei + "'"), datei + ' steht im Service-Worker-Cache');
+  }
+  assert(!/^https?:/.test(manifestIcons.concat(kopfIcons).join(' ')), 'kein Icon kommt von aussen');
+}
+
 // ------------------------------------------------------------------ Fazit
 
 if (fehler) {
