@@ -522,6 +522,17 @@
           <button type="button" id="install-einst" class="knopf">Als App installieren</button>
         </div>
 
+        <h3 class="unter-titel">Kontostand korrigieren</h3>
+        <form id="form-korrektur" novalidate>
+          <p class="fussnote oben">Stimmt die App nicht mehr mit deinem echten Konto &uuml;berein? Trag hier den richtigen Stand ein.</p>
+          <label for="korr-betrag">Richtiger Kontostand in Euro</label>
+          <input type="text" inputmode="decimal" id="korr-betrag" autocomplete="off" placeholder="0,00">
+          <label for="korr-notiz">Grund (optional)</label>
+          <input type="text" id="korr-notiz" autocomplete="off" placeholder="z.&nbsp;B. Buchung vergessen">
+          <p class="fussnote" id="korr-info"></p>
+          <button type="submit" class="knopf">Kontostand korrigieren</button>
+        </form>
+
         <h3 class="unter-titel">Backup</h3>
         <p class="fussnote oben">Alle Daten liegen nur auf diesem Ger&auml;t. Ein Backup schreibt sie in eine Datei, die du sichern kannst.</p>
         <button type="button" id="export-knopf" class="knopf">Backup exportieren</button>

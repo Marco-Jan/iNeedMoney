@@ -619,8 +619,10 @@ assert(/BarcodeDetector/.test(appJs), 'der Scanner nutzt die eingebaute BarcodeD
 assert(!/quagga|zxing|jsqr|html5-qrcode/i.test(appJs), 'keine Barcode-Bibliothek im Code');
 assert(/getUserMedia/.test(appJs) && /spur\.stop\(\)|\.stop\(\)/.test(appJs),
   'die Kamera wird angefordert UND wieder freigegeben');
-assert(/scannerMoeglich/.test(appJs) && /scanner-ean/.test(appJs),
-  'ohne BarcodeDetector bleibt die Eingabe von Hand');
+assert(/kameraMoeglich/.test(appJs) && /scanner-ean/.test(appJs),
+  'ohne Kamera bleibt die Eingabe von Hand');
+assert(/scannerEigen/.test(appJs) && /eanAusZeile\(zeile\)/.test(appJs),
+  'ohne BarcodeDetector liest die App den Strichcode selbst');
 for (const regel of ['.scan-knopf', '.budget', '.scanner-buehne', '.urteil-teuer']) {
   assert(css.includes(regel), 'styles.css kennt ' + regel);
 }
@@ -963,6 +965,85 @@ assert(htmlIds.has('install-bereich') && htmlIds.has('install-einst'), 'Abschnit
 assert(indexHtml.indexOf('data-body="einstellungen"') < indexHtml.indexOf('id="install-einst"'),
   'der Knopf liegt im Einstellungs-Blatt');
 assert(/beforeinstallprompt/.test(appJs) && /appinstalled/.test(appJs), 'die Installation haengt am Browser-Ereignis');
+
+block('Kontostand von Hand korrigieren');
+L.zuruecksetzen();
+L.einzahlen(50000, 'Start');
+assert(!L.saldoKorrigieren(NaN).ok, 'ohne Betrag keine Korrektur');
+assert(!L.saldoKorrigieren(50000).ok, 'derselbe Stand ist keine Korrektur');
+{
+  const runter = L.saldoKorrigieren(47350, 'Buchung vergessen');
+  assert(runter.ok && runter.differenz === -2650 && L.state.saldo === 47350, 'der Kontostand wird auf den neuen Wert gesetzt');
+  const tk = L.state.transaktionen[0];
+  assert(tk.typ === 'korrektur' && tk.betrag === 2650 && !tk.plus && tk.name === 'Buchung vergessen',
+    'die Korrektur steht mit Betrag und Grund im Verlauf');
+  const hoch = L.saldoKorrigieren(48000);
+  assert(hoch.ok && hoch.differenz === 650 && L.state.transaktionen[0].plus === true, 'nach oben korrigiert: als Plus vermerkt');
+  assert(L.monatsBilanz().ausgaben === 0 && L.monatsBilanz().einzahlungen === 50000 && L.monatsMuster().anzahl === 0,
+    'eine Korrektur ist weder Ausgabe noch Einzahlung noch Impulskauf');
+  assert(L.saldoKorrigieren(-1200).ok && L.state.saldo === -1200, 'auch ein ueberzogenes Konto laesst sich eintragen');
+  assert(gespeichert().saldo === -1200, 'der korrigierte Stand ist persistiert');
+  const kopieK = L.exportDaten();
+  L.zuruecksetzen();
+  assert(L.importDaten(kopieK).ok && L.state.transaktionen.filter(x => x.typ === 'korrektur').length === 3 &&
+    L.state.transaktionen.some(x => x.typ === 'korrektur' && x.plus === true), 'Korrekturen ueberleben das Backup');
+}
+assert(htmlIds.has('form-korrektur') && htmlIds.has('korr-betrag') && htmlIds.has('korr-info'), 'das Korrektur-Formular steht im HTML');
+
+block('Eigener Barcode-Leser: EAN-13 und EAN-8 aus einer Bildzeile');
+{
+  const B = ['3211', '2221', '2122', '1411', '1132', '1231', '1114', '1312', '1213', '3112'];
+  const P = ['LLLLLL', 'LLGLGG', 'LLGGLG', 'LLGGGL', 'LGLLGG', 'LGGLLG', 'LGGGLL', 'LGLGLG', 'LGLGGL', 'LGGLGL'];
+  // Module (1 = dunkel) fuer einen Code erzeugen - unabhaengig vom Leser gebaut
+  const ziffer = (z, art) => {
+    const w = art === 'G' ? B[z].split('').reverse() : B[z].split('');
+    let dunkel = art === 'R';
+    let s = '';
+    for (const n of w) { s += (dunkel ? '1' : '0').repeat(Number(n)); dunkel = !dunkel; }
+    return s;
+  };
+  const module = code => {
+    const z = code.split('').map(Number);
+    let s = '101';
+    if (z.length === 13) {
+      for (let i = 0; i < 6; i++) s += ziffer(z[i + 1], P[z[0]][i]);
+      s += '01010';
+      for (let i = 7; i < 13; i++) s += ziffer(z[i], 'R');
+    } else {
+      for (let i = 0; i < 4; i++) s += ziffer(z[i], 'L');
+      s += '01010';
+      for (let i = 4; i < 8; i++) s += ziffer(z[i], 'R');
+    }
+    return s + '101';
+  };
+  // Bildzeile: Ruhezone, Striche mit px Pixeln pro Modul, etwas Rauschen und Unschaerfe
+  const zeile = (code, px, opt) => {
+    const o = opt || {};
+    const bits = '0'.repeat(12) + module(code) + '0'.repeat(12);
+    let w = [];
+    for (const b of bits) for (let k = 0; k < px; k++) w.push(b === '1' ? 40 : 215);
+    w = new Array(60).fill(200).concat(w, new Array(60).fill(200));
+    if (o.unscharf) w = w.map((v, i) => (w[Math.max(0, i - 1)] + v + w[Math.min(w.length - 1, i + 1)]) / 3);
+    if (o.rauschen) w = w.map((v, i) => v + ((i * 7919) % 23) - 11);
+    if (o.schatten) w = w.map((v, i) => v * (0.55 + 0.45 * i / w.length));
+    return o.umgedreht ? w.reverse() : w;
+  };
+
+  assert(L.eanGueltig('4006381333931') && !L.eanGueltig('4006381333932'), 'Pruefziffer EAN-13');
+  assert(L.eanGueltig('96385074') && !L.eanGueltig('96385075') && !L.eanGueltig('123'), 'Pruefziffer EAN-8');
+  for (const code of ['4006381333931', '5449000000996', '0012345678905', '9780201379624', '7622210449283']) {
+    assert(L.eanAusZeile(zeile(code, 3)) === code, 'EAN-13 ' + code + ' wird gelesen');
+  }
+  assert(L.eanAusZeile(zeile('4006381333931', 2)) === '4006381333931', 'auch mit nur 2 Pixeln pro Strich');
+  assert(L.eanAusZeile(zeile('4006381333931', 5, { unscharf: true, rauschen: true })) === '4006381333931', 'unscharf und verrauscht');
+  assert(L.eanAusZeile(zeile('5449000000996', 4, { schatten: true })) === '5449000000996', 'mit Schatten quer ueber dem Code');
+  assert(L.eanAusZeile(zeile('4006381333931', 3, { umgedreht: true })) === '4006381333931', 'auf dem Kopf stehend');
+  assert(L.eanAusZeile(zeile('96385074', 3)) === '96385074', 'EAN-8 wird gelesen');
+  assert(L.eanAusZeile(zeile('96385074', 4, { umgedreht: true, rauschen: true })) === '96385074', 'EAN-8 auf dem Kopf');
+  assert(L.eanAusZeile(new Array(800).fill(200)) === null, 'eine leere Flaeche ergibt nichts');
+  assert(L.eanAusZeile(Array.from({ length: 900 }, (_, i) => ((i * 2654435761) % 256))) === null, 'Rauschen ergibt keinen Code');
+  assert(L.eanAusZeile(Array.from({ length: 900 }, (_, i) => (Math.floor(i / 4) % 2 ? 40 : 215))) === null, 'ein Streifenmuster ist kein Barcode');
+}
 
 // ------------------------------------------------------------------ Fazit
 

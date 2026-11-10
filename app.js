@@ -140,12 +140,13 @@ function normalisiere(roh) {
       .slice(0, MAX_HISTORIE)
       .map(t => ({
         id: String(t.id != null ? t.id : neueId()),
-        typ: ['einzahlung', 'posten', 'sparen', 'entnahme'].includes(t.typ) ? t.typ : 'ausgabe',
+        typ: ['einzahlung', 'posten', 'sparen', 'entnahme', 'korrektur'].includes(t.typ) ? t.typ : 'ausgabe',
         betrag: zahl(t.betrag),
         datum: String(t.datum || heuteISO()),
         name: String(t.name || ''),
         ...(t.art === 'einkauf' || t.art === 'wunsch' ? { art: t.art } : {}),
         ...(t.gewarnt === true ? { gewarnt: true } : {}),
+        ...(t.typ === 'korrektur' && t.plus === true ? { plus: true } : {}),
       })) : [],
     artikel: Array.isArray(roh.artikel) ? roh.artikel
       .filter(a => a && typeof a === 'object')
@@ -376,6 +377,25 @@ function einzahlen(betrag, notiz) {
   -> { ok:false, fehler } bei zu wenig Saldo
   -> { ok:true, warnung } wenn Betrag > 1/3 der offenen Posten
 */
+/*
+  Kontostand von Hand richtigstellen, wenn App und echtes Konto auseinander
+  gelaufen sind (vergessene Buchung, Tippfehler). Der Unterschied wird als
+  eigene Buchungsart 'korrektur' festgehalten - sie zählt weder als Ausgabe
+  noch als Einzahlung, damit Monatszahlen und Musteranzeige ehrlich bleiben.
+  `plus: true` heißt: das Konto wurde nach oben korrigiert.
+*/
+function saldoKorrigieren(neuerSaldo, notiz) {
+  if (!Number.isFinite(neuerSaldo)) return { ok: false, fehler: 'Bitte den richtigen Kontostand eingeben.' };
+  const neu = Math.round(neuerSaldo);
+  const differenz = neu - state.saldo;
+  if (differenz === 0) return { ok: false, fehler: 'Das ist schon dein Kontostand.' };
+  state.saldo = neu;
+  transaktion('korrektur', Math.abs(differenz), String(notiz || '').trim() || 'Kontostand korrigiert',
+    differenz > 0 ? { plus: true } : {});
+  speichere();
+  return { ok: true, differenz, saldo: neu };
+}
+
 function pruefeAusgabe(betrag, grundbedarf) {
   if (!Number.isFinite(betrag) || betrag <= 0) return { ok: false, fehler: 'Bitte einen Betrag größer als 0 eingeben.' };
   if (betrag > state.saldo) {
@@ -1190,6 +1210,141 @@ function sofortKauf({ artikelId, ean, name, preis, menge, grundbedarf, laden }) 
   return { ok: true, betrag, artikel: a, grundbedarf: grund, warnung: r.warnung || null, urteil, vonListe: !!pos };
 }
 
+/*
+  Eigener Barcode-Leser (EAN-13 und EAN-8)
+  ----------------------------------------
+  Die BarcodeDetector-API gibt es nur in manchen Browsern (nicht in Safari,
+  nicht in Firefox, nicht überall unter Android). Damit der Scanner überall
+  und offline geht, liest die App den Strichcode zusätzlich selbst - ohne
+  Bibliothek: eine Bildzeile wird in helle und dunkle Läufe zerlegt und
+  gegen die Strichmuster der Ziffern gehalten.
+
+  Aufbau EAN-13: Rand (3 Läufe) · 6 Ziffern à 4 Läufe · Mitte (5) ·
+  6 Ziffern à 4 · Rand (3) = 59 Läufe über 95 Module. Die erste der 13
+  Ziffern steht nicht als Striche da, sondern steckt darin, welche der
+  linken Ziffern „gespiegelt“ (G statt L) gedruckt sind.
+*/
+const EAN_BREITEN = ['3211', '2221', '2122', '1411', '1132', '1231', '1114', '1312', '1213', '3112']
+  .map(s => s.split('').map(Number));
+const EAN_PARITAET = ['LLLLLL', 'LLGLGG', 'LLGGLG', 'LLGGGL', 'LGLLGG', 'LGGLLG', 'LGGGLL', 'LGLGLG', 'LGLGGL', 'LGGLGL'];
+
+function eanGueltig(code) {
+  const s = String(code || '');
+  if (!/^(\d{8}|\d{13})$/.test(s)) return false;
+  let summeZ = 0;
+  for (let i = 0; i < s.length - 1; i++) {
+    summeZ += Number(s[i]) * ((s.length - 2 - i) % 2 === 0 ? 3 : 1);
+  }
+  return (10 - summeZ % 10) % 10 === Number(s[s.length - 1]);
+}
+
+// Vier Läufe -> Ziffer. `mitG`: auch die gespiegelte Form zulassen (linke Hälfte EAN-13)
+function eanZiffer(l, ab, mitG) {
+  const breite = l[ab] + l[ab + 1] + l[ab + 2] + l[ab + 3];
+  const modul = breite / 7;
+  let beste = null;
+  for (let z = 0; z < 10; z++) {
+    const b = EAN_BREITEN[z];
+    let fL = 0, fG = 0;
+    for (let k = 0; k < 4; k++) {
+      fL += Math.abs(l[ab + k] - b[k] * modul);
+      fG += Math.abs(l[ab + k] - b[3 - k] * modul);
+    }
+    if (!beste || fL < beste.fehler) beste = { ziffer: z, g: false, fehler: fL };
+    if (mitG && fG < beste.fehler) beste = { ziffer: z, g: true, fehler: fG };
+  }
+  // mehr als gut anderthalb Module daneben: lieber nichts als etwas Falsches
+  return beste && beste.fehler <= modul * 1.6 ? beste : null;
+}
+
+// Versucht, ab Lauf `i` (dunkel) einen Code mit `n` Ziffern pro Hälfte zu lesen
+function eanAb(l, i, n) {
+  const laeufe = 3 + n * 4 + 5 + n * 4 + 3;
+  if (i + laeufe > l.length) return null;
+  let breite = 0;
+  for (let k = 0; k < laeufe; k++) breite += l[i + k];
+  const modul = breite / (3 + n * 7 + 5 + n * 7 + 3);
+  if (modul < 1) return null;
+  const schmal = k => l[k] > modul * 0.3 && l[k] < modul * 2.2;
+  // Ränder und Mitte müssen aus einzelnen Modulen bestehen, davor Ruhe
+  if (i > 0 && l[i - 1] < modul * 3) return null;
+  const mitte = i + 3 + n * 4;
+  const ende = mitte + 5 + n * 4;
+  for (const k of [i, i + 1, i + 2, mitte, mitte + 1, mitte + 2, mitte + 3, mitte + 4, ende, ende + 1, ende + 2]) {
+    if (!schmal(k)) return null;
+  }
+  let code = '';
+  let paritaet = '';
+  for (let z = 0; z < n; z++) {
+    const r = eanZiffer(l, i + 3 + z * 4, n === 6);
+    if (!r) return null;
+    code += r.ziffer;
+    paritaet += r.g ? 'G' : 'L';
+  }
+  for (let z = 0; z < n; z++) {
+    const r = eanZiffer(l, mitte + 5 + z * 4, false);
+    if (!r) return null;
+    code += r.ziffer;
+  }
+  if (n === 6) {
+    const erste = EAN_PARITAET.indexOf(paritaet);
+    if (erste < 0) return null;
+    code = erste + code;
+  }
+  return eanGueltig(code) ? code : null;
+}
+
+function eanAusLaeufen(l, ersterDunkel) {
+  for (let i = ersterDunkel ? 0 : 1; i < l.length; i += 2) {
+    const code = eanAb(l, i, 6) || eanAb(l, i, 4);
+    if (code) return code;
+  }
+  return null;
+}
+
+/*
+  Eine Bildzeile (Helligkeiten 0..255) -> Barcode oder null. Die Schwelle
+  zwischen hell und dunkel wird für jede Stelle aus ihrer Umgebung bestimmt,
+  damit Schatten und ungleichmäßiges Licht nicht stören. Probiert auch die
+  umgekehrte Richtung (Packung steht auf dem Kopf).
+*/
+function eanAusZeile(werte) {
+  const n = werte.length;
+  if (n < 100) return null;
+  const fenster = Math.max(12, Math.round(n / 24));
+  const laeufe = [];
+  let ersterDunkel = false;
+  let vorher = null;
+  // Gleitendes Minimum/Maximum über Blöcke - grob, aber schnell genug pro Bild
+  const bloecke = Math.ceil(n / fenster);
+  const bMin = new Array(bloecke).fill(255);
+  const bMax = new Array(bloecke).fill(0);
+  for (let i = 0; i < n; i++) {
+    const b = (i / fenster) | 0;
+    if (werte[i] < bMin[b]) bMin[b] = werte[i];
+    if (werte[i] > bMax[b]) bMax[b] = werte[i];
+  }
+  for (let i = 0; i < n; i++) {
+    const b = (i / fenster) | 0;
+    let lo = 255, hi = 0;
+    for (let k = Math.max(0, b - 2); k <= Math.min(bloecke - 1, b + 2); k++) {
+      if (bMin[k] < lo) lo = bMin[k];
+      if (bMax[k] > hi) hi = bMax[k];
+    }
+    // Zu wenig Kontrast in der Umgebung: das ist Fläche, kein Strich
+    const dunkel = hi - lo >= 40 && werte[i] < (lo + hi) / 2;
+    if (dunkel === vorher) laeufe[laeufe.length - 1]++;
+    else {
+      if (vorher === null) ersterDunkel = dunkel;
+      laeufe.push(1);
+      vorher = dunkel;
+    }
+  }
+  if (laeufe.length < 43) return null;
+  const letzterDunkel = ersterDunkel === (laeufe.length % 2 === 1);
+  return eanAusLaeufen(laeufe, ersterDunkel) || eanAusLaeufen(laeufe.slice().reverse(), letzterDunkel);
+}
+
 // Für den Logik-Test ohne Browser
 if (typeof globalThis !== 'undefined') {
   globalThis.Logik = {
@@ -1211,6 +1366,7 @@ if (typeof globalThis !== 'undefined') {
     sparzielSetzen, sparzielStand, sparzielEinzahlen, sparzielEntnehmen, sparzielAufloesen,
     sparRateProTag, sparzielVergleich,
     einkaufGrundbedarf, sofortKauf,
+    saldoKorrigieren, eanGueltig, eanAusZeile,
   };
 }
 
@@ -1244,6 +1400,7 @@ if (istBrowser) {
     'ek-menge', 'ek-preis', 'ek-urteil', 'ek-aus-vorrat', 'einkauf-liste', 'einkauf-leer',
     'einkauf-summe', 'ek-echt', 'ek-laden', 'ek-buchen', 'ek-leeren', 'ek-fuss', 'ek-buchen-summe',
     'tagesbudget', 'aus-budget', 'aus-parken', 'muster', 'install-bereich', 'install-einst',
+    'form-korrektur', 'korr-betrag', 'korr-notiz', 'korr-info',
     'wunsch-liste', 'wunsch-leer', 'wunsch-bilanz', 'form-wunsch', 'wun-name', 'wun-betrag',
     'sparziel-karte', 'sparziel-leer', 'sparziel-aendern', 'sparziel-name', 'sparziel-stand',
     'sparziel-balken', 'sparziel-rest', 'form-sparen', 'sp-betrag', 'sp-info', 'sp-entnehmen',
@@ -1572,8 +1729,8 @@ if (istBrowser) {
         kopf.textContent = tagLabel(t.datum);
         ul.appendChild(kopf);
       }
-      const art = { posten: 'Posten', einzahlung: 'Einzahlung', sparen: 'in den Spartopf', entnahme: 'aus dem Spartopf' }[t.typ] || 'Ausgabe';
-      const plus = t.typ === 'einzahlung' || t.typ === 'entnahme';
+      const art = { posten: 'Posten', einzahlung: 'Einzahlung', sparen: 'in den Spartopf', entnahme: 'aus dem Spartopf', korrektur: 'Korrektur' }[t.typ] || 'Ausgabe';
+      const plus = t.typ === 'einzahlung' || t.typ === 'entnahme' || (t.typ === 'korrektur' && t.plus === true);
       const herkunft = t.art === 'einkauf' ? 'Einkauf' : t.art === 'wunsch' ? 'geparkter Wunsch' : art;
       ul.appendChild(zeile(t.name || art, (plus ? '+' : '−') + eur(t.betrag), plus ? 'plus' : 'minus',
         herkunft + (t.gewarnt ? ' · trotz Warnung' : '')));
@@ -1847,11 +2004,10 @@ if (istBrowser) {
   // ------------------------------------------- Einkauf, Vorrat & Barcode (UI)
 
   /*
-    Barcode-Scanner über die BarcodeDetector-API des Browsers. Das ist eine
-    eingebaute Schnittstelle (Chrome/Android), keine Bibliothek — damit bleibt
-    „offline, keine Abhängigkeiten" erfüllt. Fehlt sie (iOS, Firefox, Desktop),
-    bleibt das Feld zum Eintippen: der Scanner ist eine Abkürzung, kein
-    Nadelöhr.
+    Barcode-Scanner mit zwei Wegen, beide ohne Bibliothek: die eingebaute
+    BarcodeDetector-API des Browsers, wo es sie gibt, und der eigene
+    EAN-Leser (eanAusZeile) für alle anderen (iOS, Firefox, Desktop). Das
+    Feld zum Eintippen bleibt: der Scanner ist eine Abkürzung, kein Nadelöhr.
 
     Offline gibt es keine Produktdatenbank. Ein Barcode wird deshalb nur mit
     DEINEN Artikeln abgeglichen; unbekannte fragen einmal nach dem Namen.
@@ -1861,8 +2017,7 @@ if (istBrowser) {
   let scannerStrom = null;     // MediaStream, muss beim Schließen enden
   let scannerLaeuft = false;
 
-  const scannerMoeglich = () => typeof window !== 'undefined' &&
-    'BarcodeDetector' in window &&
+  const kameraMoeglich = () => typeof navigator !== 'undefined' &&
     !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
 
   function scannerStatus(text) {
@@ -1875,16 +2030,18 @@ if (istBrowser) {
     knoten['scanner'].hidden = false;
     document.body.classList.add('fixiert');
 
-    if (!scannerMoeglich()) {
-      scannerStatus('Dieser Browser kann keine Barcodes lesen – Nummer bitte eintippen.');
+    if (!kameraMoeglich()) {
+      scannerStatus('Keine Kamera verfügbar – Nummer bitte eintippen.');
       knoten['scanner-ean'].focus();
       return;
     }
 
     scannerStatus('Kamera wird geöffnet …');
     try {
+      // Hohe Auflösung anfragen: mit dem Standard (640×480) sind die Striche zu fein
       scannerStrom = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' } }, audio: false,
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: false,
       });
     } catch (e) {
       scannerStatus('Kein Zugriff auf die Kamera – Nummer bitte eintippen.');
@@ -1894,33 +2051,107 @@ if (istBrowser) {
     // Während des Kamera-Starts kann längst wieder geschlossen worden sein
     if (knoten['scanner'].hidden) return scannerKameraAus();
 
+    // Dauer-Autofokus, wo die Kamera das anbietet - sonst bleibt nah alles unscharf
+    try {
+      const spur = scannerStrom.getVideoTracks()[0];
+      const kann = spur && spur.getCapabilities ? spur.getCapabilities() : {};
+      if (kann.focusMode && kann.focusMode.includes('continuous')) {
+        await spur.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+      }
+    } catch (e) { /* ohne Autofokus-Wunsch geht es auch */ }
+
     const video = knoten['scanner-video'];
     video.srcObject = scannerStrom;
     try {
       await video.play();
     } catch (e) { /* manche Browser spielen erst nach Interaktion */ }
-    scannerStatus('Barcode in den Rahmen halten …');
+    scannerStatus('Barcode waagrecht in den Rahmen halten …');
     scannerSuchen();
+  }
+
+  // Der eingebaute Detektor des Browsers, falls es ihn gibt und er EAN kann
+  async function scannerDetektor() {
+    if (typeof window === 'undefined' || !('BarcodeDetector' in window)) return null;
+    try {
+      const gewollt = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf'];
+      const kann = await window.BarcodeDetector.getSupportedFormats();
+      const formate = gewollt.filter(f => kann.includes(f));
+      return formate.length ? new window.BarcodeDetector({ formats: formate }) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /*
+    Der eigene Leser: das Kamerabild auf eine Zeichenfläche legen und einige
+    waagrechte Zeilen aus der Bildmitte durch eanAusZeile() schicken. Je
+    drei Bildzeilen werden gemittelt, das nimmt das Rauschen heraus.
+  */
+  const scanFlaeche = document.createElement('canvas');
+
+  function scannerEigen(video) {
+    const vw = video.videoWidth, vh = video.videoHeight;
+    if (!vw || !vh) return [];
+    const b = Math.min(1280, vw);
+    const h = Math.round(vh * b / vw);
+    scanFlaeche.width = b;
+    scanFlaeche.height = h;
+    const ctx = scanFlaeche.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(video, 0, 0, b, h);
+    const funde = [];
+    for (let k = 0; k < 11; k++) {
+      const y = Math.round(h * (0.3 + 0.04 * k));
+      const px = ctx.getImageData(0, y, b, 3).data;
+      const zeile = new Array(b);
+      for (let x = 0; x < b; x++) {
+        let hell = 0;
+        for (let r = 0; r < 3; r++) {
+          const p = (r * b + x) * 4;
+          hell += px[p] * 2 + px[p + 1] * 5 + px[p + 2];
+        }
+        zeile[x] = hell / 24;
+      }
+      const code = eanAusZeile(zeile);
+      if (code) funde.push(code);
+    }
+    return funde;
   }
 
   async function scannerSuchen() {
     if (scannerLaeuft) return;
     scannerLaeuft = true;
-    const detector = new window.BarcodeDetector({
-      formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf'],
-    });
+    const detector = await scannerDetektor();
     const video = knoten['scanner-video'];
+    const gesehen = {};          // eigener Leser: erst der zweite gleiche Fund zählt
+    const start = Date.now();
+    let hinweisGezeigt = false;
     while (!knoten['scanner'].hidden && scannerStrom) {
-      try {
-        const treffer = await detector.detect(video);
-        const code = treffer.find(t => t.rawValue && /^\d{6,14}$/.test(t.rawValue.replace(/\D/g, '')));
-        if (code) {
-          const ean = code.rawValue.replace(/\D/g, '');
-          scannerUebernehmen(ean);
-          break;
-        }
-      } catch (e) { /* einzelne Frames dürfen fehlschlagen */ }
-      await new Promise(w => setTimeout(w, 200));
+      let ean = null;
+      if (detector) {
+        try {
+          const treffer = await detector.detect(video);
+          const code = treffer.find(t => t.rawValue && /^\d{6,14}$/.test(t.rawValue.replace(/\D/g, '')));
+          if (code) ean = code.rawValue.replace(/\D/g, '');
+        } catch (e) { /* einzelne Bilder dürfen fehlschlagen */ }
+      }
+      if (!ean) {
+        try {
+          for (const code of scannerEigen(video)) {
+            gesehen[code] = (gesehen[code] || 0) + 1;
+            if (gesehen[code] >= 2) { ean = code; break; }
+          }
+        } catch (e) { /* Bild noch nicht bereit */ }
+      }
+      if (ean) {
+        if (navigator.vibrate) navigator.vibrate(60);
+        scannerUebernehmen(ean);
+        break;
+      }
+      if (!hinweisGezeigt && Date.now() - start > 7000) {
+        hinweisGezeigt = true;
+        scannerStatus('Noch nichts erkannt: näher ran, bis der Code den Rahmen füllt, waagrecht halten, auf Licht achten. Oder die Nummer eintippen.');
+      }
+      await new Promise(w => setTimeout(w, 120));
     }
     scannerLaeuft = false;
   }
@@ -2548,6 +2779,7 @@ if (istBrowser) {
     if (name === 'einzahlung') rendEinzahlungLive();
     if (name === 'sparen') rendSparenLive();
     if (name === 'sparziel') sparzielFormularFuellen();
+    if (name === 'einstellungen') korrekturFuellen();
     if (name === 'sofort') {
       // Gleich die Kamera: im Laden zählt jeder Handgriff
       sofortLeeren();
@@ -2570,6 +2802,7 @@ if (istBrowser) {
     knoten['form-wunsch'].reset();
     knoten['form-sparen'].reset();
     knoten['form-sparziel'].reset();
+    knoten['form-korrektur'].reset();
     sofortLeeren();
     postenFormularLeeren();
     artikelFormularLeeren();
@@ -3013,6 +3246,47 @@ if (istBrowser) {
     };
     leser.onerror = () => toast('Datei konnte nicht gelesen werden.', 'warn');
     leser.readAsText(datei);
+  });
+
+  // Kontostand korrigieren: das Feld zeigt den jetzigen Stand, man tippt den richtigen
+  const korrekturWert = () => {
+    const s = knoten['korr-betrag'].value.trim();
+    const minus = /^[-−]/.test(s);
+    const cent = zuCent(s.replace(/^[-−]\s*/, ''));
+    return Number.isFinite(cent) ? (minus ? -cent : cent) : NaN;
+  };
+
+  function korrekturInfo() {
+    const neu = korrekturWert();
+    const diff = neu - state.saldo;
+    knoten['korr-info'].textContent = !Number.isFinite(neu) ? 'In der App stehen gerade ' + eur(state.saldo) + '.'
+      : diff === 0 ? 'Das ist der Stand in der App – nichts zu korrigieren.'
+        : 'In der App stehen ' + eur(state.saldo) + '. Korrektur: ' + (diff > 0 ? '+' : '−') + eur(Math.abs(diff)) + '.';
+  }
+
+  function korrekturFuellen() {
+    knoten['korr-betrag'].value = (state.saldo / 100).toFixed(2).replace('.', ',');
+    knoten['korr-notiz'].value = '';
+    korrekturInfo();
+  }
+
+  knoten['korr-betrag'].addEventListener('input', korrekturInfo);
+  knoten['form-korrektur'].addEventListener('submit', async e => {
+    e.preventDefault();
+    const neu = korrekturWert();
+    if (!Number.isFinite(neu)) {
+      toast('Bitte den richtigen Kontostand eingeben.', 'warn');
+      return knoten['korr-betrag'].focus();
+    }
+    const diff = neu - state.saldo;
+    if (diff === 0) return toast('Das ist schon dein Kontostand.');
+    if (!await frage('Kontostand von ' + eur(state.saldo) + ' auf ' + eur(neu) + ' setzen? Die Korrektur von ' +
+      (diff > 0 ? '+' : '−') + eur(Math.abs(diff)) + ' steht danach im Verlauf.', 'Korrigieren')) return;
+    const r = saldoKorrigieren(neu, knoten['korr-notiz'].value);
+    if (!r.ok) return toast(r.fehler, 'warn');
+    rendAlle();
+    overlaySchliessen();
+    toast('Kontostand ist jetzt ' + eur(r.saldo) + '.', 'ok');
   });
 
   knoten['reset-knopf'].addEventListener('click', async () => {

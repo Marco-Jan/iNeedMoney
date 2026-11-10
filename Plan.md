@@ -75,8 +75,13 @@ prüfen, dass UI und HTML zueinander passen.
         Ausgabe (optional mit der Summe vom Kassenzettel)
   - [x] **Vorrat & Preise**: Artikel anlegen/ändern/löschen, Bestand ±,
         Mindestbestand mit „nachkaufen"-Markierung, Bestpreis und letzter Preis
-  - [x] **Barcode-Scanner** über die eingebaute `BarcodeDetector`-API, mit
-        Eingabe von Hand als Rückfall
+  - [x] **Barcode-Scanner**: eingebaute `BarcodeDetector`-API, wo vorhanden,
+        sonst der **eigene EAN-Leser** (`eanAusZeile()`, EAN-13/EAN-8);
+        Eingabe von Hand als letzter Rückfall
+  - [x] **Kontostand korrigieren** (Einstellungen): `saldoKorrigieren()` setzt
+        den Stand und bucht den Unterschied als eigene Art `'korrektur'`
+        (`plus: true` = nach oben). Zählt weder als Ausgabe noch als
+        Einzahlung noch in die Musteranzeige.
   - [x] Einstellungen: Farbschema, Backup exportieren / importieren, Reset
   - [x] Toasts statt `alert()`
   - [x] **Farbschema System / Hell / Dunkel**. Ohne Wahl folgt die App dem
@@ -86,7 +91,7 @@ prüfen, dass UI und HTML zueinander passen.
         Inline-Skript im `<head>` setzt das Attribut vor dem ersten Zeichnen,
         sonst blitzt das falsche Schema auf.
 - [x] **Offline/PWA**: `manifest.json` (verlinkt!) + Service Worker (`sw.js`, Cache
-      `inneedmoney-v11`): Navigation und Assets „Netz zuerst, Cache als Rückfall",
+      `inneedmoney-v12`): Navigation und Assets „Netz zuerst, Cache als Rückfall",
       damit HTML, CSS und JS nach einem Deploy zusammenpassen. Alle Assets lokal.
 - [x] **Sprache**: UI auf Deutsch.
 - [x] **Design**: flache, ruhige Oberfläche in Dunkel und Hell mit Gold als
@@ -172,6 +177,15 @@ billig für dich".
   Desktop), bleibt das Eingabefeld: der Scanner ist eine Abkürzung, kein
   Nadelöhr. Die Kamera wird beim Schließen **immer** freigegeben
   (`spur.stop()`), auch wenn das Overlay darüber zugemacht wird.
+- **Eigener EAN-Leser** (`eanAusZeile(helligkeiten)`, Logik-Hälfte, getestet):
+  `BarcodeDetector` fehlt in Safari, Firefox und auf manchen Android-Geräten —
+  dort erkannte der Scanner früher schlicht nichts. Jetzt legt `scannerEigen()`
+  das Kamerabild auf ein Canvas, nimmt 11 Zeilen aus der Bildmitte (je drei
+  Pixelzeilen gemittelt) und zerlegt sie in helle/dunkle Läufe; die Schwelle
+  kommt aus der Umgebung (Schatten). Ein Fund zählt erst beim zweiten Mal
+  und nur mit gültiger Prüfziffer. Grenzen: nur waagrechte Codes, nur
+  EAN-13/EAN-8. Die Kamera wird mit 1920×1080 und Dauer-Autofokus angefragt —
+  mit dem Standard 640×480 sind die Striche zu fein.
 - **Warum kein EAN-Lookup**: Offline gibt es keine Produktdatenbank. Ein
   Barcode wird nur mit *deinen* Artikeln abgeglichen; ein unbekannter fragt
   einmal nach dem Namen und ist ab dann bekannt.
