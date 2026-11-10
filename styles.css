@@ -1,36 +1,109 @@
 /*
-  iNeedMoney - Neomorphismus in Schwarz mit Gold-Akzenten
-  Die Oberflaechen liegen leicht heller als der Hintergrund und bekommen
-  zwei Schatten: ein kaltes Licht oben links, ein tiefes Schwarz unten rechts.
+  iNeedMoney - ruhige, flache Oberflaeche in Dunkel und Hell.
+  Gold ist der einzige Akzent: als Flaeche fuer Hauptknopf und Balken,
+  als Schrift nur ueber --akzent-text (im hellen Modus ein dunkleres Gold,
+  das normale waere auf Weiss nicht lesbar).
+
+  Farbschema: ohne data-thema am <html> folgt die App dem System.
+  data-thema="hell" / "dunkel" erzwingt eines (Einstellungen).
+  Die hellen Werte stehen deshalb zweimal da - einmal fuer "System ist hell",
+  einmal fuer "von Hand hell". Ohne Build-Schritt geht das nicht kuerzer;
+  wer eine Farbe aendert, aendert sie an BEIDEN Stellen.
 */
 
 :root {
-  --bg: #0d0d0f;
-  --surface: #16161a;
-  --surface-tief: #101014;
-  --surface-hoch: #1d1d22;
+  color-scheme: dark;
 
-  --gold: #d4af37;
-  --gold-hell: #f0d878;
-  --gold-dunkel: #8a6f1f;
-  --gold-schimmer: rgba(212, 175, 55, 0.14);
+  --bg: #0e0e10;
+  --flaeche: #17171b;
+  --flaeche-2: #1f1f24;
+  --flaeche-3: #24242a;
+  --feld: #0e0e10;
+  --leiste: #131316;
+  --linie: rgba(255, 255, 255, 0.08);
+  --rand: rgba(255, 255, 255, 0.16);
 
-  --text: #f2f0ea;
-  --text-leise: #a9a69e;
-  --text-still: #87847c;
-  --rot: #e05a5a;
-  --gruen: #5fb87a;
+  --text: #f4f2ec;
+  --leise: #a8a59c;
 
-  --licht: rgba(255, 255, 255, 0.045);
-  --licht-stark: rgba(255, 255, 255, 0.07);
-  --dunkel: rgba(0, 0, 0, 0.75);
+  --akzent: #e0bb4a;
+  --akzent-text: #e0bb4a;
+  --auf-akzent: #17130a;
 
-  --erhoben: -6px -6px 16px var(--licht), 6px 6px 18px var(--dunkel);
-  --erhoben-gross: -10px -10px 26px var(--licht), 10px 10px 30px var(--dunkel);
-  --gedrueckt: inset -4px -4px 10px var(--licht), inset 5px 5px 12px var(--dunkel);
+  --plus: #7fd69b;
+  --warn: #ff9d82;
+  --warn-flaeche: #2b1b16;
+  --warn-rand: #6b3a2c;
+  --warn-text: #ffc2b0;
 
-  --radius: 18px;
-  --radius-klein: 12px;
+  --balken-rest: #3b3b44;
+  --balken-neutral: #f4f2ec;
+  --schleier: rgba(0, 0, 0, 0.62);
+  --schatten: 0 10px 34px rgba(0, 0, 0, 0.6);
+
+  --radius: 16px;
+  --radius-klein: 14px;
+  --leisten-hoehe: 64px;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-thema="dunkel"]) {
+    color-scheme: light;
+
+    --bg: #f5f5f3;
+    --flaeche: #ffffff;
+    --flaeche-2: #f2f1ed;
+    --flaeche-3: #efeeea;
+    --feld: #ffffff;
+    --leiste: #ffffff;
+    --linie: rgba(0, 0, 0, 0.09);
+    --rand: rgba(0, 0, 0, 0.2);
+
+    --text: #17171a;
+    --leise: #5f5d58;
+
+    --akzent-text: #7d5f00;
+
+    --plus: #1b7340;
+    --warn: #b23a1d;
+    --warn-flaeche: #fdece6;
+    --warn-rand: #efb5a3;
+    --warn-text: #8a2a12;
+
+    --balken-rest: #cfcec8;
+    --balken-neutral: #17171a;
+    --schleier: rgba(20, 20, 20, 0.45);
+    --schatten: 0 10px 30px rgba(0, 0, 0, 0.18);
+  }
+}
+
+:root[data-thema="hell"] {
+  color-scheme: light;
+
+  --bg: #f5f5f3;
+  --flaeche: #ffffff;
+  --flaeche-2: #f2f1ed;
+  --flaeche-3: #efeeea;
+  --feld: #ffffff;
+  --leiste: #ffffff;
+  --linie: rgba(0, 0, 0, 0.09);
+  --rand: rgba(0, 0, 0, 0.2);
+
+  --text: #17171a;
+  --leise: #5f5d58;
+
+  --akzent-text: #7d5f00;
+
+  --plus: #1b7340;
+  --warn: #b23a1d;
+  --warn-flaeche: #fdece6;
+  --warn-rand: #efb5a3;
+  --warn-text: #8a2a12;
+
+  --balken-rest: #cfcec8;
+  --balken-neutral: #17171a;
+  --schleier: rgba(20, 20, 20, 0.45);
+  --schatten: 0 10px 30px rgba(0, 0, 0, 0.18);
 }
 
 * {
@@ -40,7 +113,7 @@
 }
 
 /*
-  Muss sein: eine eigene display-Regel (z. B. .sekundaer { display: block })
+  Muss sein: eine eigene display-Regel (z. B. .knopf { display: flex })
   schlaegt das hidden-Attribut aus dem Browser-Stylesheet, und das Element
   bleibt trotz hidden sichtbar.
 */
@@ -54,12 +127,12 @@ html {
 
 body {
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  background: radial-gradient(circle at 50% -10%, #1a1a1f 0%, var(--bg) 55%) no-repeat;
-  background-attachment: fixed;
+  font-variant-numeric: tabular-nums;
+  background: var(--bg);
   color: var(--text);
   min-height: 100vh;
-  display: flex;
-  flex-direction: column;
+  min-height: 100dvh;
+  line-height: 1.35;
   -webkit-tap-highlight-color: transparent;
   -webkit-font-smoothing: antialiased;
 }
@@ -68,265 +141,395 @@ body.fixiert {
   overflow: hidden;
 }
 
-/* ------------------------------------------------------------------ Header */
-
-header {
-  padding: calc(2.25rem + env(safe-area-inset-top)) 1rem 1.75rem;
-  text-align: center;
-  position: relative;
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
 }
 
-header::after {
-  content: '';
+button {
+  cursor: pointer;
+}
+
+svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+}
+
+svg.dick {
+  width: 20px;
+  height: 20px;
+  stroke-width: 2.4;
+}
+
+.nur-vorlesen {
   position: absolute;
-  bottom: 0;
-  left: 15%;
-  right: 15%;
+  width: 1px;
   height: 1px;
-  background: linear-gradient(90deg, transparent, var(--gold-schimmer) 20%, rgba(212, 175, 55, 0.4) 50%, var(--gold-schimmer) 80%, transparent);
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
-.kopf-label {
-  font-size: 0.7rem;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--text-still);
-  margin-bottom: 0.6rem;
+.leise {
+  color: var(--leise);
+  font-size: 0.875rem;
 }
 
-.saldo {
-  font-size: clamp(2.5rem, 13vw, 3.5rem);
-  font-weight: 300;
-  letter-spacing: -0.02em;
-  background: linear-gradient(170deg, var(--gold-hell), var(--gold) 45%, var(--gold-dunkel));
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: var(--gold);
-  font-variant-numeric: tabular-nums;
-}
+/* ------------------------------------------------------------- Grundgeruest */
 
-.saldo.negativ {
-  background: none;
-  -webkit-text-fill-color: var(--rot);
-  color: var(--rot);
-}
-
-.hinweis {
-  color: var(--text-leise);
-  font-size: 0.85rem;
-  margin-top: 0.65rem;
-}
-
-/* -------------------------------------------------------------------- Main */
-
-main {
-  flex: 1;
+#app {
   width: 100%;
   max-width: 560px;
   margin: 0 auto;
-  padding: 1.5rem 1rem calc(2.5rem + env(safe-area-inset-bottom));
+  padding: calc(1rem + env(safe-area-inset-top)) 1.25rem
+    calc(var(--leisten-hoehe) + 2rem + env(safe-area-inset-bottom));
 }
 
-/* ----------------------------------------------------------------- Kacheln */
-
-#kacheln {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.9rem;
-}
-
-.kachel {
-  position: relative;
-  background: var(--surface);
-  border: none;
-  border-radius: var(--radius);
-  padding: 1.15rem 0.5rem 1rem;
+.ansicht {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 0.55rem;
-  color: var(--text);
-  font: inherit;
-  cursor: pointer;
-  box-shadow: var(--erhoben);
-  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  gap: 1rem;
 }
 
-.kachel-icon {
-  font-size: 1.5rem;
-  line-height: 1;
-  color: var(--gold);
-  width: 2.6rem;
-  height: 2.6rem;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: var(--surface-tief);
-  box-shadow: var(--gedrueckt);
-  text-shadow: 0 0 14px rgba(212, 175, 55, 0.35);
-}
-
-.kachel-titel {
-  font-size: 0.73rem;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  color: var(--text-leise);
-}
-
-@media (hover: hover) {
-  .kachel:hover {
-    transform: translateY(-3px);
-    box-shadow: var(--erhoben-gross);
-  }
-  .kachel:hover .kachel-titel { color: var(--text); }
-}
-
-.kachel:active {
-  transform: scale(0.97);
-  box-shadow: var(--gedrueckt);
-}
-
-/* ------------------------------------------------------------------- Cards */
-
-.card {
-  background: var(--surface);
-  border-radius: var(--radius);
-  margin-top: 1.4rem;
-  box-shadow: var(--erhoben);
-}
-
-.card h2 {
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--gold);
-  opacity: 0.85;
-}
-
-/* Aufklappbare Cards ------------------------------------------------------ */
-
-.card-kopf {
-  width: 100%;
-  background: none;
-  border: none;
-  font: inherit;
-  color: inherit;
-  text-align: left;
-  padding: 1.25rem 1.35rem;
+.kopfzeile,
+.ansicht-kopf {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  cursor: pointer;
+  min-height: 44px;
+}
+
+.kopfzeile .rund-knopf {
+  margin-right: -0.6rem;
+}
+
+.ansicht-kopf h1 {
+  font-size: 1.65rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+
+.block-kopf {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 44px;
+}
+
+.block-kopf h2 {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.card {
+  background: var(--flaeche);
   border-radius: var(--radius);
+  padding: 0.25rem 1rem;
 }
 
-.card-kopf:active {
-  background: rgba(255, 255, 255, 0.02);
+/* ------------------------------------------------------------------ Knoepfe */
+
+.knopf {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 54px;
+  padding: 0.6rem 1rem;
+  border: 1px solid var(--rand);
+  border-radius: var(--radius);
+  background: var(--flaeche);
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+  transition: transform 0.12s ease, opacity 0.12s ease;
 }
 
-@media (hover: hover) {
-  .card-kopf:hover h2 { opacity: 1; }
+.knopf:active,
+.pille:active,
+.scan-knopf:active {
+  transform: scale(0.98);
+  opacity: 0.85;
 }
 
-/* Chevron aus zwei Kanten - kein Bild, kein Icon-Font */
-.card-pfeil {
-  width: 0.5rem;
-  height: 0.5rem;
+.knopf.haupt {
+  background: var(--akzent);
+  border-color: transparent;
+  color: var(--auf-akzent);
+}
+
+.knopf.gefahr {
+  color: var(--warn);
+}
+
+/* Ohne Rahmen: die leise Zweitwahl unter einem Hauptknopf */
+.knopf.still {
+  border-color: transparent;
+  background: none;
+  color: var(--leise);
+  font-weight: 400;
+  min-height: 48px;
+}
+
+.knopf.schmal {
+  width: auto;
+  min-height: 52px;
+  padding: 0 1.1rem;
+  white-space: nowrap;
+}
+
+.knopf.zweiteilig {
+  justify-content: space-between;
+  padding: 0 1.25rem;
+}
+
+.rund-knopf {
+  width: 44px;
+  height: 44px;
   flex-shrink: 0;
-  border-right: 2px solid var(--gold);
-  border-bottom: 2px solid var(--gold);
-  transform: rotate(45deg) translateY(-15%);
-  opacity: 0.75;
-  transition: transform 0.28s cubic-bezier(0.3, 0.8, 0.3, 1), opacity 0.2s ease;
-}
-
-.card[data-offen="false"] .card-pfeil {
-  transform: rotate(-45deg) translateX(-15%);
-}
-
-.card-huelle {
   display: grid;
-  grid-template-rows: 1fr;
-  overflow: hidden;
-  transition: grid-template-rows 0.3s cubic-bezier(0.3, 0.8, 0.3, 1);
+  place-items: center;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--leise);
 }
 
-.card[data-offen="false"] .card-huelle {
-  grid-template-rows: 0fr;
+.rund-knopf:active {
+  background: var(--flaeche-2);
+}
+
+.text-knopf {
+  min-height: 44px;
+  padding: 0 0.25rem;
+  margin-right: -0.25rem;
+  border: none;
+  background: none;
+  color: var(--akzent-text);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.pille {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  height: 44px;
+  padding: 0 1rem 0 0.75rem;
+  border: none;
+  border-radius: 22px;
+  background: var(--akzent);
+  color: var(--auf-akzent);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.icon-knopf {
+  /* mindestens 44px - alles darunter trifft man am Handy schlecht */
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 0.75rem;
+  border: 1px solid var(--linie);
+  border-radius: 12px;
+  background: var(--flaeche-2);
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.icon-knopf:active {
+  background: var(--flaeche-3);
+}
+
+.icon-knopf.entfernen,
+.icon-knopf.gefahr-knopf {
+  color: var(--warn);
+}
+
+/* Umschalter aus zwei bis vier gleich breiten Knoepfen */
+.segment {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--radius-klein);
+  background: var(--flaeche);
+}
+
+.overlay-card .segment {
+  background: var(--flaeche-2);
+}
+
+.segment button {
+  min-height: 40px;
+  padding: 0 0.25rem;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  color: var(--leise);
+  font-size: 0.875rem;
+}
+
+.segment button[aria-pressed="true"] {
+  background: var(--flaeche-3);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 0 0 1px var(--linie);
+}
+
+/* ------------------------------------------------------------- Startseite */
+
+.held {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.held-label {
+  color: var(--leise);
+  font-size: 0.875rem;
+  margin-bottom: -0.7rem;
+}
+
+.held-zahl {
+  font-size: clamp(2.6rem, 13vw, 3.25rem);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.held-zahl.negativ,
+.negativ {
+  color: var(--warn);
+}
+
+.held-legende {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  color: var(--leise);
+  font-size: 0.82rem;
+}
+
+.held-legende strong {
+  color: var(--text);
+  font-weight: 500;
 }
 
 /*
-  Wichtig: hier darf KEIN vertikales Padding stehen. Mit border-box faellt
-  die Hoehe eines Elements nie unter sein Padding - die 0fr-Zeile waere zwar
-  0 hoch, das Padding bliebe aber als Streifen stehen, in dem der Inhalt
-  durchscheint. Der Abstand nach unten kommt deshalb vom letzten Kind.
-  overflow:hidden macht daraus zugleich einen BFC, so dass dieser Rand
-  nicht nach aussen durchschlaegt.
+  Balken: zeigt, wie sich das Konto aufteilt. Die Teile bekommen ihre Breite
+  als flex-grow aus dem Betrag in Cent - kein Rechnen in Prozent noetig.
 */
-.card-inhalt {
-  min-height: 0;
-  overflow: hidden;
-  padding: 0 1.35rem;
+.balken {
+  display: flex;
+  gap: 3px;
+  height: 10px;
 }
 
-.card-inhalt > :last-child {
-  margin-bottom: 1.35rem;
+.balken:empty {
+  border-radius: 5px;
+  background: var(--balken-rest);
 }
 
-/* Fallback fuer Browser ohne Animation von 0fr/1fr: hart ein- und ausblenden */
-@supports not (grid-template-rows: 0fr) {
-  .card[data-offen="false"] .card-huelle { display: none; }
+.balken-teil {
+  flex: 1 1 0;
+  min-width: 4px;
+  border-radius: 5px;
+  transition: flex-grow 0.25s ease;
 }
 
-/* -------------------------------------------------------- Monatsuebersicht */
+.balken-teil.frei { background: var(--akzent); }
+.balken-teil.reserviert { background: var(--balken-rest); }
+.balken-teil.neutral { background: var(--balken-neutral); }
+.balken-teil.warn { background: var(--warn); }
+
+.balken-legende {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: var(--leise);
+  font-size: 0.75rem;
+}
+
+.aktionen-gross {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.25rem;
+}
 
 .monat-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.75rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+  padding: 0.9rem 1rem;
 }
 
 .monat-zelle {
-  background: var(--surface-tief);
-  border-radius: var(--radius-klein);
-  padding: 0.85rem 0.9rem;
-  box-shadow: var(--gedrueckt);
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.25rem;
+  min-width: 0;
 }
 
 .monat-label {
-  font-size: 0.68rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-still);
+  color: var(--leise);
+  font-size: 0.75rem;
 }
 
 .monat-wert {
-  font-size: 1.05rem;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
-.monat-wert.plus { color: var(--gruen); }
-.monat-wert.minus { color: var(--rot); }
+.monat-wert.plus { color: var(--plus); }
+.monat-wert.minus { color: var(--warn); }
 
 .fussnote {
-  margin-top: 0.9rem;
-  font-size: 0.75rem;
+  margin-top: 0.75rem;
+  font-size: 0.8rem;
   line-height: 1.5;
-  color: var(--text-still);
+  color: var(--leise);
+}
+
+.fussnote.oben {
+  margin-top: 0;
+}
+
+.overlay-body .fussnote.oben {
+  margin-bottom: 0.75rem;
+}
+
+.fussnote:empty {
+  display: none;
 }
 
 .leer {
-  font-size: 0.85rem;
-  color: var(--text-still);
-  padding: 0.5rem 0;
+  font-size: 0.9rem;
+  color: var(--leise);
+  padding: 1rem 0;
 }
 
 /* ------------------------------------------------------------------ Listen */
@@ -339,12 +542,24 @@ main {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.85rem 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+  padding: 0.65rem 0;
+  border-bottom: 1px solid var(--linie);
 }
 
 .liste li:last-child {
   border-bottom: none;
+}
+
+/* Tages-Ueberschrift im Verlauf ("Heute", "Gestern", ...) */
+.liste li.gruppe {
+  padding: 0.9rem 0 0.15rem;
+  border-bottom: none;
+  color: var(--leise);
+  font-size: 0.78rem;
+}
+
+.liste li.gruppe:first-child {
+  padding-top: 0.25rem;
 }
 
 .z-text {
@@ -352,103 +567,133 @@ main {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.15rem;
 }
 
 .z-haupt {
-  font-size: 0.92rem;
+  font-size: 0.95rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .z-unter {
-  font-size: 0.7rem;
-  color: var(--text-still);
+  font-size: 0.78rem;
+  color: var(--leise);
 }
 
 .betrag {
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-  color: var(--gold);
+  font-size: 0.95rem;
+  font-weight: 600;
   white-space: nowrap;
 }
 
-.betrag.plus { color: var(--gruen); }
-.betrag.minus { color: var(--rot); }
-.betrag.bezahlt { color: var(--text-still); }
+.betrag.plus { color: var(--plus); }
+.betrag.minus { color: var(--text); }
+.betrag.bezahlt { color: var(--leise); }
+
+/* Datum als kleine Kachel vor einem Termin */
+.tag-kachel {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: var(--flaeche-3);
+  line-height: 1.1;
+}
+
+.tag-kachel-nr {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.tag-kachel-wt {
+  font-size: 0.7rem;
+  color: var(--leise);
+}
 
 .marke {
   align-self: flex-start;
-  font-size: 0.6rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  padding: 0.18rem 0.5rem;
+  font-size: 0.72rem;
+  padding: 0.1rem 0.5rem;
   border-radius: 999px;
+  border: 1px solid var(--linie);
+  color: var(--leise);
 }
 
-.marke-ok {
-  color: var(--gruen);
-  background: rgba(95, 184, 122, 0.1);
-  border: 1px solid rgba(95, 184, 122, 0.3);
-}
+.liste li > .marke { align-self: center; }
 
-.marke-offen {
-  color: var(--gold);
-  background: var(--gold-schimmer);
-  border: 1px solid rgba(212, 175, 55, 0.3);
-}
+.marke-ok { color: var(--plus); }
+.marke-offen { color: var(--akzent-text); }
+.marke-ruhig { color: var(--leise); }
 
 .aktionen {
   display: flex;
-  gap: 0.3rem;
+  align-items: center;
+  gap: 0.4rem;
   flex-shrink: 0;
 }
 
-.icon-knopf {
-  background: var(--surface-hoch);
+/* Listen mit Knoepfen: Name und Betrag oben, die Knoepfe in eigener Zeile */
+#posten-liste li,
+#einkauf-liste li,
+#vorrat-liste li {
+  flex-wrap: wrap;
+}
+
+#posten-liste .aktionen,
+#einkauf-liste .aktionen,
+#vorrat-liste .aktionen {
+  flex-basis: 100%;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+/* Menge: minus, Zahl, plus als eine Einheit */
+.stepper {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--linie);
+  border-radius: 12px;
+  background: var(--flaeche-2);
+}
+
+.stepper button {
+  width: 44px;
+  height: 44px;
   border: none;
-  color: var(--text-leise);
-  font: inherit;
-  font-size: 0.72rem;
-  /* mindestens 44px hoch - alles darunter trifft man am Handy schlecht */
-  min-height: 44px;
-  padding: 0.4rem 0.75rem;
-  border-radius: 10px;
-  cursor: pointer;
-  box-shadow: -2px -2px 6px var(--licht), 2px 2px 7px var(--dunkel);
-  transition: color 0.15s ease, box-shadow 0.15s ease;
+  background: none;
+  color: var(--text);
+  font-size: 1.25rem;
 }
 
-.icon-knopf:active {
-  box-shadow: var(--gedrueckt);
+.stepper-zahl {
+  min-width: 1.75rem;
+  text-align: center;
+  font-size: 0.95rem;
+  font-weight: 600;
 }
 
-.icon-knopf.entfernen { color: var(--rot); }
-
-@media (hover: hover) {
-  .icon-knopf:hover { color: var(--gold); }
-  .icon-knopf.entfernen:hover { color: #ff7b7b; }
-}
-
-/* ---------------------------------------------------------------- Overlays */
+/* ------------------------------------------------- Blatt von unten, Dialoge */
 
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(5, 5, 7, 0.82);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1rem;
   z-index: 100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: var(--schleier);
   animation: einblenden 0.18s ease;
 }
 
-.overlay[hidden] {
-  display: none;
+.overlay.mittig {
+  align-items: center;
+  padding: 1.25rem;
 }
 
 @keyframes einblenden {
@@ -457,25 +702,42 @@ main {
 }
 
 .overlay-card {
-  background: var(--surface);
-  border-radius: 22px;
-  border: 1px solid rgba(212, 175, 55, 0.12);
   width: 100%;
-  max-width: 460px;
-  max-height: calc(100vh - 2rem);
+  max-width: 560px;
+  max-height: 92vh;
+  max-height: 92dvh;
   overflow-y: auto;
-  padding: 1.5rem;
-  box-shadow: var(--erhoben-gross), 0 0 60px rgba(0, 0, 0, 0.7);
-  animation: auftauchen 0.22s cubic-bezier(0.2, 0.8, 0.3, 1);
+  overscroll-behavior: contain;
+  background: var(--flaeche);
+  border-radius: 28px 28px 0 0;
+  padding: 0.6rem 1.25rem calc(1.25rem + env(safe-area-inset-bottom));
+  box-shadow: var(--schatten);
+  animation: hochfahren 0.24s cubic-bezier(0.2, 0.8, 0.3, 1);
 }
 
 .overlay-card.schmal {
-  max-width: 360px;
+  max-width: 380px;
+  border-radius: 24px;
+  padding: 1.5rem 1.25rem 1.25rem;
+  animation-name: auftauchen;
+}
+
+@keyframes hochfahren {
+  from { transform: translateY(40px); opacity: 0; }
+  to { transform: none; opacity: 1; }
 }
 
 @keyframes auftauchen {
-  from { opacity: 0; transform: translateY(14px) scale(0.98); }
-  to { opacity: 1; transform: none; }
+  from { transform: scale(0.97); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+.blatt-griff {
+  width: 40px;
+  height: 4px;
+  margin: 0 auto 0.4rem;
+  border-radius: 2px;
+  background: var(--balken-rest);
 }
 
 .overlay-head {
@@ -483,371 +745,133 @@ main {
   justify-content: space-between;
   align-items: center;
   gap: 1rem;
-  margin-bottom: 1.35rem;
+  margin-bottom: 0.75rem;
 }
 
 .overlay-head h2 {
-  font-size: 0.75rem;
+  font-size: 1.15rem;
   font-weight: 600;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--gold);
 }
 
-#overlay-schliessen {
-  background: var(--surface-tief);
-  border: none;
-  color: var(--text-leise);
-  font-size: 1.4rem;
-  line-height: 1;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  cursor: pointer;
-  box-shadow: var(--erhoben);
-  flex-shrink: 0;
+.overlay-head .rund-knopf {
+  margin-right: -0.6rem;
 }
 
-#overlay-schliessen:active {
-  box-shadow: var(--gedrueckt);
-}
-
-.unter-titel {
-  font-size: 0.7rem;
+.unter-titel,
+.feld-titel {
+  font-size: 1rem;
   font-weight: 600;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--text-still);
-  margin: 1.75rem 0 0.5rem;
-  padding-top: 1.25rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.055);
+  margin: 1.75rem 0 0.6rem;
+}
+
+.feld-titel {
+  margin-top: 0.25rem;
 }
 
 .gefahr-titel {
-  color: var(--rot);
-  opacity: 0.8;
+  color: var(--warn);
 }
 
-/* -------------------------------------------------------------- Formulare */
+.overlay-body .knopf + .knopf,
+.overlay-body .knopf + .datei-label {
+  margin-top: 0.6rem;
+}
+
+[data-panel] {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+[data-panel] > .knopf,
+[data-panel] .fussnote {
+  margin-top: 0;
+}
+
+/* --------------------------------------------------------------- Formulare */
 
 label {
   display: block;
-  margin-bottom: 0.45rem;
-  color: var(--text-leise);
-  font-size: 0.78rem;
-  letter-spacing: 0.03em;
+  margin-bottom: 0.4rem;
+  color: var(--leise);
+  font-size: 0.82rem;
 }
 
 label + input {
-  margin-bottom: 1.1rem;
+  margin-bottom: 1rem;
 }
 
 input[type="text"],
 input[type="number"],
-input[type="date"] {
+input[type="date"],
+select {
   width: 100%;
-  background: var(--surface-tief);
-  border: 1px solid transparent;
-  padding: 0.85rem 1rem;
+  min-height: 52px;
+  padding: 0 1rem;
+  border: 1px solid var(--rand);
   border-radius: var(--radius-klein);
+  background: var(--feld);
   color: var(--text);
-  font: inherit;
   font-size: 1rem;
-  box-shadow: var(--gedrueckt);
   outline: none;
-  transition: border-color 0.15s ease;
 }
 
 input::placeholder {
-  color: var(--text-still);
+  color: var(--leise);
+  opacity: 0.8;
 }
 
 input[type="text"]:focus,
 input[type="number"]:focus,
-input[type="date"]:focus {
-  border-color: rgba(212, 175, 55, 0.55);
+input[type="date"]:focus,
+select:focus {
+  border-color: var(--akzent-text);
+  box-shadow: 0 0 0 1px var(--akzent-text);
 }
 
 input[type="file"] {
   display: none;
 }
 
-button[type="submit"],
-.datei-label,
-.sekundaer,
-.gefahr {
-  display: block;
-  width: 100%;
+/* Der Betrag ist die Hauptsache im Blatt: gross, mittig, ohne Kasten */
+.betrag-label {
   text-align: center;
-  font: inherit;
-  font-size: 0.92rem;
+  margin-bottom: 0;
+}
+
+input[type="text"].betrag-gross {
+  min-height: 0;
+  padding: 0.15rem 0 0.35rem;
+  border-color: transparent;
+  background: none;
+  font-size: 3.4rem;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  padding: 0.95rem 1rem;
-  margin-top: 0.75rem;
-  border: none;
-  border-radius: var(--radius-klein);
-  cursor: pointer;
-  box-shadow: var(--erhoben);
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-
-button[type="submit"] {
-  background: linear-gradient(165deg, var(--gold-hell), var(--gold) 55%, var(--gold-dunkel));
-  color: #15120a;
-  margin-top: 0.5rem;
-}
-
-.sekundaer,
-.datei-label {
-  background: var(--surface-hoch);
-  color: var(--gold);
-}
-
-.gefahr {
-  background: var(--surface-hoch);
-  color: var(--rot);
-}
-
-button[type="submit"]:active,
-.datei-label:active,
-.sekundaer:active,
-.gefahr:active {
-  transform: scale(0.985);
-  box-shadow: var(--gedrueckt);
-}
-
-@media (hover: hover) {
-  button[type="submit"]:hover { box-shadow: var(--erhoben-gross), 0 0 24px rgba(212, 175, 55, 0.22); }
-  .sekundaer:hover, .datei-label:hover, .gefahr:hover { box-shadow: var(--erhoben-gross); }
-}
-
-/* ------------------------------------------------------------- Warnung */
-
-.warnung {
-  background: rgba(224, 90, 90, 0.08);
-  border: 1px solid rgba(224, 90, 90, 0.45);
-  border-left: 3px solid var(--rot);
-  color: #f3a9a9;
-  padding: 0.9rem 1rem;
-  border-radius: var(--radius-klein);
-  margin-bottom: 1.25rem;
-  font-size: 0.85rem;
-  line-height: 1.5;
-}
-
-/* -------------------------------------------------------------- Kalender */
-
-.kal-nav {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-  margin-bottom: 1.1rem;
-}
-
-.kal-nav button {
-  background: var(--surface-tief);
-  color: var(--gold);
-  border: none;
-  font-size: 1.3rem;
-  line-height: 1;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  cursor: pointer;
-  box-shadow: var(--erhoben);
-  flex-shrink: 0;
-}
-
-.kal-nav button:active {
-  box-shadow: var(--gedrueckt);
-}
-
-#kal-monat {
-  font-size: 0.95rem;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  color: var(--text);
-}
-
-.kal-grid {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 5px;
-}
-
-.kal-grid .tag {
+  letter-spacing: -0.03em;
   text-align: center;
-  font-size: 0.62rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-still);
-  padding: 0.3rem 0 0.5rem;
+  margin-bottom: 0.6rem;
 }
 
-.kal-grid .tag-leer {
-  min-height: 3.1rem;
+/* Kein Rahmen beim Tippen - der blinkende Cursor zeigt den Fokus */
+input[type="text"].betrag-gross:focus,
+input[type="text"].betrag-gross:focus-visible {
+  border-color: transparent;
+  box-shadow: none;
+  outline: none;
 }
 
-.kal-grid .tag-zelle {
-  background: var(--surface-tief);
-  border: 1px solid transparent;
-  border-radius: 9px;
-  min-height: 3.1rem;
-  padding: 0.25rem 0.2rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  overflow: hidden;
+.betrag-folge {
+  text-align: center;
+  color: var(--leise);
+  font-size: 0.9rem;
+  margin: -0.4rem 0 1.25rem;
 }
 
-.kal-grid .tag-nr {
-  font-size: 0.7rem;
-  color: var(--text-leise);
-  font-variant-numeric: tabular-nums;
-}
-
-.kal-grid .tag-zelle.heute {
-  border-color: rgba(212, 175, 55, 0.55);
-  box-shadow: 0 0 14px rgba(212, 175, 55, 0.18), var(--gedrueckt);
-}
-
-.kal-grid .tag-zelle.heute .tag-nr {
-  color: var(--gold);
-  font-weight: 700;
-}
-
-/*
-  In eine Zelle passt kein Name - Punkte zeigen, DASS etwas ansteht,
-  die kleine Zahl grob WIE VIEL. Die Namen stehen in der Liste darunter.
-*/
-.kal-punkte {
-  display: flex;
-  gap: 2px;
-  justify-content: center;
-  flex-wrap: wrap;
-  margin-top: 1px;
-}
-
-.kal-punkt {
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--gold);
-}
-
-.kal-punkt-ab {
-  background: var(--text-still);
-}
-
-.kal-betrag {
-  font-size: 0.58rem;
-  line-height: 1.2;
-  color: var(--gold);
-  font-variant-numeric: tabular-nums;
-  margin-top: 1px;
-}
-
-.kal-grid .tag-zelle.hat-posten {
-  background: linear-gradient(180deg, var(--surface-tief), rgba(212, 175, 55, 0.05));
-}
-
-.kal-grid .tag-zelle.tag-bezahlt .kal-betrag {
-  color: var(--text-still);
-}
-
-/* --------------------------------------------------------------- Dialoge */
-
-#frage-text {
-  font-size: 0.95rem;
-  line-height: 1.6;
-  color: var(--text);
-  white-space: pre-line;
-  margin-bottom: 1.5rem;
-}
-
-.frage-knoepfe {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.75rem;
-}
-
-.frage-knoepfe button {
-  margin-top: 0;
-}
-
-/* ----------------------------------------------------------------- Toast */
-
-.toast {
-  position: fixed;
-  left: 50%;
-  bottom: calc(1.5rem + env(safe-area-inset-bottom));
-  transform: translateX(-50%);
-  max-width: calc(100% - 2rem);
-  background: var(--surface-hoch);
-  color: var(--text);
-  font-size: 0.85rem;
-  padding: 0.8rem 1.25rem;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.75);
-  z-index: 200;
-  animation: hochschieben 0.22s ease;
-}
-
-.toast[hidden] {
-  display: none;
-}
-
-.toast-ok { border-color: rgba(212, 175, 55, 0.45); color: var(--gold-hell); }
-.toast-warn { border-color: rgba(224, 90, 90, 0.5); color: #f3a9a9; }
-
-@keyframes hochschieben {
-  from { opacity: 0; transform: translate(-50%, 12px); }
-  to { opacity: 1; transform: translate(-50%, 0); }
-}
-
-/* ------------------------------------------------------------- Kleinzeug */
-
-::-webkit-scrollbar { width: 7px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb {
-  background: #2a2a30;
-  border-radius: 4px;
-}
-
-button:focus { outline: none; }
-
-button:focus-visible,
-input:focus-visible,
-.datei-label:focus-visible {
-  outline: 2px solid var(--gold);
-  outline-offset: 2px;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    transition-duration: 0.01ms !important;
-  }
-}
-
-@media (max-width: 360px) {
-  #kacheln { gap: 0.6rem; }
-  .kachel { padding: 0.9rem 0.3rem 0.8rem; }
-  .monat-grid { grid-template-columns: 1fr; }
-}
-
-.toast { cursor: pointer; }
-
-/* Wiederholung: Zahl und Einheit nebeneinander */
+/* Zwei Felder nebeneinander: Zahl und Einheit */
 .feld-paar {
   display: grid;
   grid-template-columns: 1fr 1.4fr;
   gap: 0.6rem;
-  margin-bottom: 1.1rem;
+  margin-bottom: 1rem;
 }
 
 .feld-paar input,
@@ -855,58 +879,57 @@ input:focus-visible,
   margin-bottom: 0;
 }
 
+/*
+  Zwei Varianten von .feld-paar: eine Zeile mit Knopf am Ende (Feld nimmt den
+  Rest) und eine Zeile aus mehreren beschrifteten Spalten. Eigene Klassen
+  statt :has(), damit es auch in aelteren Handy-Browsern greift.
+*/
+.feld-paar.mit-scan {
+  grid-template-columns: 1fr auto;
+  align-items: start;
+}
+
+.feld-paar.felder {
+  grid-template-columns: repeat(auto-fit, minmax(5rem, 1fr));
+  align-items: end;
+}
+
+.feld-spalte {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.feld-spalte label + input,
+.feld-spalte label + select {
+  margin-bottom: 0;
+}
+
 select {
-  width: 100%;
-  background: var(--surface-tief);
-  border: 1px solid transparent;
-  padding: 0.85rem 1rem;
-  border-radius: var(--radius-klein);
-  color: var(--text);
-  font: inherit;
-  font-size: 1rem;
-  box-shadow: var(--gedrueckt);
-  outline: none;
   appearance: none;
   -webkit-appearance: none;
   cursor: pointer;
+  padding-right: 2.5rem;
   /* Chevron als Inline-SVG - kein externes Bild, bleibt offline-tauglich */
-  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23d4af37' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23908d85' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 1rem center;
   background-size: 10px 6px;
-  padding-right: 2.5rem;
 }
 
-select:focus {
-  border-color: rgba(212, 175, 55, 0.55);
-}
-
-/* Dunkle Browser-Oberflaechen: Datums-Popup und Auswahlliste */
-input[type="date"],
-select {
-  color-scheme: dark;
+select option {
+  background: var(--flaeche);
+  color: var(--text);
 }
 
 input[type="date"] {
   -webkit-appearance: none;
   appearance: none;
-  min-height: 3.2rem;
   text-align: left;
 }
 
 input[type="date"]::-webkit-date-and-time-value {
   text-align: left;
-}
-
-/* Kalender-Symbol des Browsers in Gold */
-input[type="date"]::-webkit-calendar-picker-indicator {
-  cursor: pointer;
-  filter: invert(72%) sepia(52%) saturate(560%) hue-rotate(5deg) brightness(95%);
-}
-
-select option {
-  background: var(--surface-hoch);
-  color: var(--text);
 }
 
 /* Zahlenfelder ohne Hochzaehl-Pfeile */
@@ -921,23 +944,396 @@ input[type="number"]::-webkit-outer-spin-button {
   margin: 0;
 }
 
-/* Name und Betrag brauchen die volle Breite, die Knoepfe bekommen eine eigene Zeile */
-#posten-liste li {
-  flex-wrap: wrap;
-}
-
-#posten-liste .aktionen {
-  flex-basis: 100%;
-  justify-content: flex-end;
-}
-
-.marke-ruhig {
-  color: var(--text-still);
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+/*
+  Preis direkt in der Zeile aendern. input[type="text"] hat hoehere
+  Spezifitaet als eine Klasse allein - der Selektor muss deshalb so heissen.
+*/
+input[type="text"].inline-preis {
+  width: 5.5rem;
+  min-height: 44px;
+  flex-shrink: 0;
+  padding: 0 0.6rem;
+  border-radius: 12px;
+  font-size: 0.9rem;
+  text-align: right;
+  margin-bottom: 0;
 }
 
 #post-vorschau {
-  margin-top: -0.4rem;
-  margin-bottom: 0.4rem;
+  margin-top: -0.25rem;
+  margin-bottom: 0.9rem;
+}
+
+.scan-knopf {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--rand);
+  border-radius: var(--radius-klein);
+  background: var(--feld);
+  color: var(--akzent-text);
+}
+
+.scan-knopf svg {
+  width: 24px;
+  height: 24px;
+}
+
+/* ------------------------------------------------------- Budget und Warnung */
+
+/* Kasten "Danach frei verfuegbar" mit Balken - in der Ausgabe und im Einkauf */
+.budget {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.9rem 1rem;
+  border-radius: var(--radius);
+  background: var(--flaeche-2);
+  margin-bottom: 1rem;
+}
+
+.budget.card {
+  background: var(--flaeche);
+  margin-bottom: 0;
+}
+
+.budget-kopf {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: var(--leise);
+  font-size: 0.875rem;
+}
+
+.budget-kopf strong,
+.budget-wert {
+  color: var(--text);
+  font-size: 1.15rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.budget-kopf strong.negativ,
+.budget-wert.negativ {
+  color: var(--warn);
+}
+
+.budget-fuss {
+  color: var(--leise);
+  font-size: 0.78rem;
+}
+
+.warnung {
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--warn-rand);
+  border-radius: var(--radius);
+  background: var(--warn-flaeche);
+  color: var(--warn-text);
+  font-size: 0.875rem;
+  line-height: 1.45;
+  margin-bottom: 1rem;
+}
+
+.held .warnung,
+[data-panel] .warnung {
+  margin-bottom: 0;
+}
+
+/* Ein Hinweis ist keine Warnung - gleiche Form, ruhigere Farbe */
+.warnung.warnung-sanft {
+  border-color: var(--linie);
+  background: var(--flaeche-2);
+  color: var(--text);
+}
+
+/* Preis-Urteil gegen das eigene Preisgedaechtnis */
+.urteil { font-weight: 600; }
+.urteil-best { color: var(--plus); }
+.urteil-gut { color: var(--plus); }
+.urteil-ok { color: var(--leise); }
+.urteil-teuer { color: var(--warn); }
+.urteil-neu { color: var(--leise); }
+
+/*
+  "Einkauf buchen" klebt ueber der Navigation, solange die Liste nicht leer
+  ist - der Abschluss ist sonst erst nach langem Scrollen zu finden.
+*/
+.kleb-fuss {
+  position: sticky;
+  bottom: calc(var(--leisten-hoehe) + env(safe-area-inset-bottom));
+  margin: 0.9rem -1.25rem 0;
+  padding: 0.75rem 1.25rem;
+  background: var(--bg);
+  border-top: 1px solid var(--linie);
+}
+
+#ek-fuss .knopf.gefahr {
+  margin-top: 0.9rem;
+}
+
+/* ---------------------------------------------------------------- Kalender */
+
+.kal-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin: -0.25rem -0.6rem -0.5rem;
+}
+
+#kal-monat {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.kal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.kal-grid .tag {
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--leise);
+  padding-bottom: 0.2rem;
+}
+
+.kal-grid .tag-zelle {
+  height: 44px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1.5px solid transparent;
+  border-radius: 12px;
+  background: none;
+  color: var(--text);
+  font-size: 0.875rem;
+}
+
+.kal-grid .tag-nr {
+  line-height: 1;
+}
+
+.kal-grid .tag-zelle.vorbei {
+  color: var(--leise);
+}
+
+.kal-grid .tag-zelle.hat-posten {
+  background: var(--flaeche-2);
+}
+
+.kal-grid .tag-zelle.heute {
+  border-color: var(--akzent-text);
+  font-weight: 700;
+}
+
+.kal-grid .tag-zelle.gewaehlt {
+  background: var(--akzent);
+  border-color: transparent;
+  color: var(--auf-akzent);
+  font-weight: 700;
+}
+
+/*
+  In eine Zelle passt kein Name - ein Punkt zeigt, DASS etwas ansteht.
+  Namen und Betraege stehen in der Liste darunter; ein Tipp auf den Tag
+  filtert sie.
+*/
+.kal-punkt {
+  display: block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--akzent-text);
+}
+
+/* Bezahlt = hohler Ring: unterscheidet sich in der Form, nicht nur in der Farbe */
+.kal-punkt-ab {
+  background: none;
+  border: 1.5px solid var(--leise);
+}
+
+.tag-zelle.gewaehlt .kal-punkt-ab {
+  background: none;
+  border-color: var(--auf-akzent);
+}
+
+.kal-punkt-leer {
+  background: none;
+}
+
+.tag-zelle.gewaehlt .kal-punkt {
+  background: var(--auf-akzent);
+}
+
+.kal-legende {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  color: var(--leise);
+  font-size: 0.78rem;
+}
+
+.kal-legende span {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.kal-legende .kal-summe {
+  margin-left: auto;
+}
+
+/* --------------------------------------------------------------- Dialoge */
+
+#frage-text {
+  font-size: 0.95rem;
+  line-height: 1.6;
+  white-space: pre-line;
+  margin-bottom: 1.25rem;
+}
+
+.frage-knoepfe {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+/* -------------------------------------------------------------- Scanner */
+
+.scanner-buehne {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: var(--flaeche-2);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 1rem;
+}
+
+/* Rueckfall fuer Browser ohne aspect-ratio */
+@supports not (aspect-ratio: 4 / 3) {
+  .scanner-buehne { height: 15rem; }
+}
+
+#scanner-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Zielrahmen: nur Optik, faengt keine Klicks ab */
+.scanner-rahmen {
+  position: absolute;
+  inset: 22% 10%;
+  border: 2px solid var(--akzent);
+  border-radius: 10px;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+
+#scanner-status {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  min-height: 1.2rem;
+}
+
+/*
+  Kein eigenes z-index: #scanner steht im HTML hinter #overlay und vor #frage.
+  Bei gleichem z-index entscheidet die DOM-Reihenfolge - der Scanner liegt
+  damit ueber dem Blatt, der Bestaetigungs-Dialog ueber beiden.
+*/
+
+/* ------------------------------------------------------------- Navigation */
+
+#tabs {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 0 max(0.5rem, calc((100% - 560px) / 2)) env(safe-area-inset-bottom);
+  background: var(--leiste);
+  border-top: 1px solid var(--linie);
+}
+
+.tab {
+  height: var(--leisten-hoehe);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: none;
+  background: none;
+  color: var(--leise);
+  font-size: 0.75rem;
+}
+
+.tab[aria-current="page"] {
+  color: var(--akzent-text);
+  font-weight: 600;
+}
+
+/* ----------------------------------------------------------------- Toast */
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--leisten-hoehe) + 1rem + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  max-width: calc(100% - 2rem);
+  padding: 0.75rem 1.2rem;
+  border: 1px solid var(--rand);
+  border-radius: 999px;
+  background: var(--flaeche-3);
+  color: var(--text);
+  font-size: 0.875rem;
+  box-shadow: var(--schatten);
+  z-index: 200;
+  cursor: pointer;
+  animation: hochschieben 0.22s ease;
+}
+
+.toast-ok { border-color: var(--akzent-text); }
+.toast-warn { border-color: var(--warn); color: var(--warn-text); background: var(--warn-flaeche); }
+
+@keyframes hochschieben {
+  from { opacity: 0; transform: translate(-50%, 12px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* ------------------------------------------------------------- Kleinzeug */
+
+button:focus { outline: none; }
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+.datei-label:focus-visible {
+  outline: 2px solid var(--akzent-text);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (max-width: 350px) {
+  #app { padding-left: 1rem; padding-right: 1rem; }
+  .monat-grid { grid-template-columns: 1fr 1fr; }
+  .kleb-fuss { margin-left: -1rem; margin-right: -1rem; padding-left: 1rem; padding-right: 1rem; }
 }

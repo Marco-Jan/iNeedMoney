@@ -13,6 +13,11 @@ Wichtigste Anforderung: **muss offline am Handy funktionieren** → keine extern
     2 Wochen). Wochen-Rhythmen wandern durchs Jahr und können zweimal im
     selben Monat fallen.
 - **Rest**: alles, was nicht reserviert ist → für spontane Ausgaben („frei verfügbar").
+- **Artikel**: eine Ware, die du kaufst. Ist gleichzeitig **Vorratszähler** und
+  **Preisgedächtnis** (Bestpreis, letzter Preis, Laden, Historie) und optional
+  über einen **Barcode** ansprechbar.
+- **Einkaufsliste**: geplanter Einkauf (Position = Artikel × Menge × Preis).
+  Die Summe wird wie eine geplante spontane Ausgabe behandelt.
 - **Warnung**: Bei spontaner Ausgabe warnen, wenn der Betrag > 1/3 der Summe der noch offenen Posten (künftige Tage im aktuellen Monat) ist.
 
 ## Architektur
@@ -40,29 +45,50 @@ prüfen, dass UI und HTML zueinander passen.
   - gespeicherte Daten werden beim Laden über `normalisiere()` geprüft → kaputte
     oder fremde Dateien legen die App nicht lahm
 - [x] **UI**:
-  - [x] Saldo + Hinweis „Noch offen diesen Monat"
-  - [x] Monatsübersicht: eingezahlt / ausgegeben / Posten bezahlt / frei verfügbar
-  - [x] Einzahlung erfassen (mit Notiz)
-  - [x] Posten anlegen, **bearbeiten** und löschen
-  - [x] Spontane Ausgabe mit Warnung (eigener Bestätigungs-Dialog, kein `confirm()`)
-  - [x] Kalenderansicht: pro Tag Punkte + gerundeter Betrag (in eine Zelle von
-        1/7 Bildschirmbreite passt kein Name), darunter eine Liste mit den vollen
-        Namen. Heutiger Tag markiert, Navigation über Monats- und Jahresgrenzen
-  - [x] Alle Ausgaben mit Summe
-  - [x] Historie der letzten Buchungen mit Datum und Art
-  - [x] Einstellungen: Backup exportieren / importieren, Reset (nicht mehr versehentlich erreichbar)
+  - [x] **Vier Ansichten mit Leiste unten** (Übersicht, Posten, Einkauf,
+        Verlauf) statt acht gleich großer Kacheln. Formulare öffnen sich als
+        **Blatt von unten** (`data-oeffnet` → `data-body`), Einstellungen
+        hinter dem Zahnrad.
+  - [x] **Übersicht**: große Zahl ist „Frei verfügbar" (Konto minus offene
+        Termine), nicht der Kontostand. Balken darunter: frei / reserviert.
+        Darunter Monatszahlen, „Als Nächstes" (die drei nächsten Termine mit
+        „in 4 Tagen") und die letzten Buchungen nach Tag gruppiert.
+  - [x] Einzahlung erfassen (mit Notiz), zeigt „Konto danach"
+  - [x] Posten anlegen, **bearbeiten** und löschen (Formular im Blatt)
+  - [x] **Spontane Ausgabe mit Live-Warnung**: schon beim Tippen steht da, was
+        danach frei bleibt, und die Drittel-Warnung erscheint im Blatt. Der
+        Knopf heißt dann „Trotzdem ausgeben" — das ersetzt den früheren
+        Bestätigungs-Dialog. Geprüft wird über dasselbe `pruefeAusgabe()`.
+  - [x] **Posten & Kalender in einer Ansicht**: pro Tag ein Punkt (voll = offen,
+        Ring = bezahlt; in eine Zelle von 1/7 Bildschirmbreite passt kein Name).
+        Ein Tipp auf einen Tag filtert die Terminliste darunter. Heutiger Tag
+        markiert, Navigation über Monats- und Jahresgrenzen
+  - [x] **Verlauf**: alle Buchungen nach Tag gruppiert, filterbar nach
+        Ausgaben / Eingängen / Posten, mit Summe des Filters
+  - [x] **Einkauf & Budget**: Einkaufsliste mit Budget-Kasten (Einkauf /
+        frei verfügbar / danach frei), Barcode-Scan, Preis-Urteil gegen den
+        eigenen Bestpreis, „Aus Vorrat ergänzen", Abschluss als **eine**
+        Ausgabe (optional mit der Summe vom Kassenzettel)
+  - [x] **Vorrat & Preise**: Artikel anlegen/ändern/löschen, Bestand ±,
+        Mindestbestand mit „nachkaufen"-Markierung, Bestpreis und letzter Preis
+  - [x] **Barcode-Scanner** über die eingebaute `BarcodeDetector`-API, mit
+        Eingabe von Hand als Rückfall
+  - [x] Einstellungen: Farbschema, Backup exportieren / importieren, Reset
   - [x] Toasts statt `alert()`
-  - [x] **Cards auf der Startseite einklappbar** (Kopf = Knopf mit `aria-expanded`,
-        Pfeil dreht sich). Der Auf-/Zu-Zustand liegt in `inneedmoney.ui.v1` —
-        bewusst getrennt von den Spardaten, damit ein Backup-Import ihn nicht
-        mitbringt. Animation über `grid-template-rows: 1fr → 0fr`, mit
-        `@supports`-Rückfall für ältere Browser.
+  - [x] **Farbschema System / Hell / Dunkel**. Ohne Wahl folgt die App dem
+        Gerät (`prefers-color-scheme`), eine Wahl setzt `data-thema` am
+        `<html>`. Sie liegt in `inneedmoney.ui.v1` — bewusst getrennt von den
+        Spardaten, damit ein Backup-Import sie nicht mitbringt. Ein kleines
+        Inline-Skript im `<head>` setzt das Attribut vor dem ersten Zeichnen,
+        sonst blitzt das falsche Schema auf.
 - [x] **Offline/PWA**: `manifest.json` (verlinkt!) + Service Worker (`sw.js`, Cache
-      `inneedmoney-v4`): Navigation und Assets „Netz zuerst, Cache als Rückfall",
+      `inneedmoney-v6`): Navigation und Assets „Netz zuerst, Cache als Rückfall",
       damit HTML, CSS und JS nach einem Deploy zusammenpassen. Alle Assets lokal.
 - [x] **Sprache**: UI auf Deutsch.
-- [x] **Design**: Neomorphismus in Schwarz mit Gold-Akzenten, Variablen in
-      `:root`, reduzierte Animationen bei `prefers-reduced-motion`.
+- [x] **Design**: flache, ruhige Oberfläche in Dunkel und Hell mit Gold als
+      einzigem Akzent (kein Neomorphismus mehr). Farben als Variablen in
+      `:root`, Systemschrift, Tippflächen mindestens 44 px, reduzierte
+      Animationen bei `prefers-reduced-motion`.
 - [x] **Tests**: `node test-logic.js`
 
 ## Abrechnung (Details)
@@ -90,30 +116,100 @@ bei dem ist das Geld trotzdem abgebucht worden; jeder Abzug landet mit seinem
 - **Warum kein `abgegriffen` mehr**: Das war pro Kalendermonat organisiert und
   kann „alle 4 Wochen" nicht abbilden. Alte Stände werden beim Laden migriert
   (`postenNormalisieren`), ohne etwas doppelt zu buchen.
-- Warnschwelle: `betrag > floor(summeOffenerTermine / 3)` → Warnkasten +
-  Bestätigungs-Dialog. Gezählt werden **Termine**, nicht Posten — ein
-  14-Tage-Posten zählt dreimal, wenn er dreimal im Monat fällt.
+- Warnschwelle: `betrag > floor(summeOffenerTermine / 3)` → Warnkasten im
+  Blatt, Knopf „Trotzdem ausgeben". Gezählt werden **Termine**, nicht Posten —
+  ein 14-Tage-Posten zählt dreimal, wenn er dreimal im Monat fällt.
+  `pruefeAusgabe()` und `warnschwelle()` rechnen mit derselben Summe; früher
+  summierte die Prüfung Posten statt Termine und nannte eine andere Zahl.
 - **„Offen" vs. „bezahlt" kommt immer aus dem Zähler** (`index < naechster`),
   nie aus „Termin liegt in der Vergangenheit" — sonst widersprechen sich
   Startseite und Kalender.
+
+## Einkauf, Vorrat & Barcode (Details)
+
+Das ist die Antwort auf „so etwas wie Marktguru" unter der Offline-Bedingung.
+Marktguru lebt von laufend aktualisierten Prospektdaten aus dem Netz — das
+geht hier nicht und soll hier nicht gehen. Stattdessen entsteht der Nutzen aus
+**deinen eigenen Preisen**: nicht „was ist im Angebot", sondern „ist das
+billig für dich".
+
+- **Preisgedächtnis**: Jeder abgeschlossene Einkauf schreibt den Preis jeder
+  Position in die Historie ihres Artikels (max. 20 Einträge). Daraus kommt das
+  Urteil beim nächsten Mal:
+
+      ≤ Bestpreis            → „Bestpreis"
+      ≤ Bestpreis × 1,10     → „guter Preis"
+      ≤ Bestpreis × 1,25     → „normal"
+      darüber                → „teuer, X % über deinem Bestpreis"
+
+  Der `bestPreis` wird **immer aus der Historie neu berechnet**, nie aus den
+  gespeicherten Daten übernommen — ein kaputter oder fremder Importwert bliebe
+  sonst für immer stehen.
+- **Urteil vor dem Eintragen**: Beim Abschließen wird das Urteil geholt,
+  *bevor* der neue Preis in der Historie landet. Sonst ist der neue Preis
+  selbst der Bestpreis und jeder Einkauf wäre ein „Bestpreis".
+- **Budget**: `einkaufBudget()` schickt die Listensumme durch dasselbe
+  `pruefeAusgabe()` wie jede andere Ausgabe. Damit gilt exakt die gleiche
+  Warnschwelle (1/3 der offenen Posten) — **es gibt keine zweite Regel**, die
+  irgendwann auseinanderlaufen könnte.
+- **Abschluss = eine Buchung**: Der Einkauf landet als *eine* Ausgabe in der
+  Historie („Einkauf Rewe · 4 Positionen"), nicht als eine pro Artikel. Sonst
+  wäre die Ausgabenliste nach einem Wocheneinkauf unlesbar. Weicht der
+  Kassenzettel ab, wird der **bezahlte** Betrag gebucht; die Positionspreise
+  bleiben wie eingetragen, denn welche Position sich geändert hat, weiß nur
+  der Nutzer.
+- **Vorrat**: Beim Abschluss wird die gekaufte Menge auf den Bestand addiert.
+  `mindest > 0` schaltet die Nachkauf-Erinnerung ein (0 = egal).
+  „Aus Vorrat ergänzen" füllt die Liste mit allem, was auf oder unter dem
+  Mindestbestand liegt.
+- **Barcode**: über die eingebaute `BarcodeDetector`-API des Browsers plus
+  `getUserMedia` — eine Browser-Schnittstelle, **keine Bibliothek**, damit
+  „offline, keine Abhängigkeiten" erfüllt bleibt. Fehlt sie (iOS, Firefox,
+  Desktop), bleibt das Eingabefeld: der Scanner ist eine Abkürzung, kein
+  Nadelöhr. Die Kamera wird beim Schließen **immer** freigegeben
+  (`spur.stop()`), auch wenn das Overlay darüber zugemacht wird.
+- **Warum kein EAN-Lookup**: Offline gibt es keine Produktdatenbank. Ein
+  Barcode wird nur mit *deinen* Artikeln abgeglichen; ein unbekannter fragt
+  einmal nach dem Namen und ist ab dann bekannt.
+- **Getippter Name zählt wie ein Scan**: Die Vorschlagsliste im Einkauf bietet
+  Artikelnamen an. `einkaufHinzu` sucht deshalb ohne Barcode auch über den
+  Namen — sonst entstünden stille Doppel-Artikel ohne Preisgedächtnis.
+- **Scanner ist kein `.overlay-body`**: Er wird aus Einkauf *und* Vorrat
+  geöffnet und darf nicht mit umgeschaltet werden. Er liegt als eigenes
+  Overlay im HTML hinter `#overlay` und vor `#frage` — bei gleichem
+  `z-index` entscheidet die DOM-Reihenfolge.
+- **Preis in der Zeile per `change`, nicht `input`**: Bei jedem Tastendruck neu
+  zu rendern würde den Fokus aus dem Feld reißen.
 
 ## CSS-Fallen, die hier schon zugeschlagen haben
 
 - `[hidden]` braucht `display: none !important`. Eine eigene display-Regel
   (z. B. `.sekundaer { display: block }`) schlägt sonst das hidden-Attribut aus
   dem Browser-Stylesheet, und das Element bleibt sichtbar.
-- Das Grid-Item einer einklappbaren Card darf **kein vertikales Padding** haben.
-  Mit `box-sizing: border-box` fällt die Höhe nie unter das Padding — die
-  `0fr`-Zeile ist zwar 0 hoch, das Padding bleibt als Streifen stehen, in dem
-  der Inhalt durchscheint. Der Abstand nach unten kommt deshalb vom letzten Kind.
+- Die hellen Farbwerte stehen **zweimal** in `styles.css` (System ist hell /
+  von Hand hell). Ohne Build-Schritt geht das nicht kürzer; der Test prüft,
+  dass beide Blöcke identisch sind.
+- Gold als **Schrift** nur über `--akzent-text`: im hellen Modus ist das ein
+  dunkleres Gold, das normale wäre auf Weiß nicht lesbar. `--akzent` ist nur
+  für Flächen (Hauptknopf, Balken).
+- `interactive-widget=resizes-content` im Viewport-Meta: sonst verdeckt die
+  Handy-Tastatur den unteren Teil des Blatts samt Knopf.
 - Formularfelder einzeln prüfen: `input[type="date"]` braucht eigene Regeln, es
   fällt nicht unter die Selektoren für Text- und Zahlenfelder.
+- `input[type="text"]` hat **höhere Spezifität** als eine Klasse
+  (Attribut-Selektor zählt wie eine Klasse, plus das Element). `.inline-preis`
+  allein hätte das `width: 100%` der Textfelder nicht geschlagen — der
+  Selektor muss `input[type="text"].inline-preis` heißen.
+- `:has()` vermeiden: Die Varianten von `.feld-paar` (Scan-Zeile,
+  Spalten-Zeile) bekommen eigene Klassen (`.mit-scan`, `.felder`), damit es
+  auch in älteren Handy-Browsern greift.
 
 ## Testen
 
 - Logik + DOM-Vertrag: `node test-logic.js`. Der Test prüft nicht nur die Beträge,
   sondern auch, dass **jede ID, die `app.js` erwartet, in `index.html` existiert**,
-  dass jede Kachel ein Overlay öffnet und dass nichts von außen geladen wird.
+  dass jeder Öffner ein Blatt hat, jeder Tab eine Ansicht, und dass nichts von
+  außen geladen wird.
   Das ist Absicht: ein reiner Logik-Test mit DOM-Attrappe hat genau diesen Fehler
   einmal übersehen, und die App war dadurch komplett tot.
 - Browser: über lokalen HTTP-Server, z. B. `python -m http.server` — nicht per `file://`
@@ -121,6 +217,8 @@ bei dem ist das Geld trotzdem abgebucht worden; jeder Abzug landet mit seinem
 
 ## Mögliche nächste Schritte
 
+- Preis-Verlauf pro Artikel anzeigen (die Historie liegt schon da)
+- Einkauf einem Posten zuordnen („Haushaltsgeld") statt als freie Ausgabe
 - Posten pausieren statt löschen (für Verträge, die ruhen)
 - Sparziel mit Fortschritt
 - Auswertung über mehrere Monate
