@@ -17,6 +17,9 @@ iNeedMoney: persönliche Spar-App. Features (vom Nutzer gefordert):
 - **Scannen & gleich bezahlen**: im Laden Barcode scannen, Preis bestätigen oder eintippen, der Betrag wird sofort abgezogen (`sofortKauf()`); Nicht-Grundbedarf läuft dabei durch Warnung und Bremse
 - **Barcode ohne Bibliothek**: `BarcodeDetector`, wo vorhanden, sonst der eigene EAN-13/EAN-8-Leser `eanAusZeile()` — keine Scanner-Bibliothek einbauen
 - **Stichtag**: der Zeitraum läuft bis zum nächsten Geld (Monatsende, fester Tag oder eingetragenes Datum) — nie direkt mit „Monatsende" rechnen, immer über `periode()` / `restTage()`
+- **Rückgängig**: nur per Meldung direkt nach einer spontanen Ausgabe/Einzahlung (`buchungZuruecknehmen()`, nur heute) — kein Löschen im Verlauf einbauen, das würde die Reibung der Korrektur umgehen
+- **Serie**: `spontanSerie()` zählt die Tage seit der letzten spontanen Ausgabe (Übersicht und Ausgabe-Blatt)
+- **Backup**: `state.backup` = Datum des letzten Exports, `backupStand()` erinnert nach 14 Tagen; neue Version der App wird per Meldung „Neu laden" angekündigt
 - **Kontostand korrigieren**: in den Einstellungen, bucht den Unterschied als `korrektur` (weder Ausgabe noch Einzahlung); bewusst mit Reibung (Pflicht-Grund, Folgen anzeigen, 10 Sekunden Bremse, Rückfrage)
 - **Muster**: die Übersicht zeigt, wie viel diesen Monat spontan und trotz Warnung ausgegeben wurde
 

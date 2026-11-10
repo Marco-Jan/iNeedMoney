@@ -156,6 +156,7 @@ function normalisiere(roh) {
       .map(einkaufPosNormalisieren) : [],
     sparziel: sparzielNormalisieren(roh.sparziel),
     stichtag: stichtagNormalisieren(roh.stichtag),
+    backup: /^\d{4}-\d{2}-\d{2}$/.test(String(roh.backup)) ? String(roh.backup) : null,
     wuensche: Array.isArray(roh.wuensche) ? roh.wuensche
       .filter(w => w && typeof w === 'object' && Number.isFinite(w.betrag) && w.betrag > 0)
       .slice(0, MAX_WUENSCHE)
@@ -178,9 +179,11 @@ function speichere() {
     gewarnt: true               sie wurde trotz Warnung gebucht
 */
 function transaktion(typ, betrag, name, extra) {
-  state.transaktionen.unshift(Object.assign(
-    { id: neueId(), typ, betrag, datum: heuteISO(), name: name || '' }, extra || {}));
+  const t = Object.assign(
+    { id: neueId(), typ, betrag, datum: heuteISO(), name: name || '' }, extra || {});
+  state.transaktionen.unshift(t);
   if (state.transaktionen.length > MAX_HISTORIE) state.transaktionen.length = MAX_HISTORIE;
+  return t.id;
 }
 
 // ---------------------------------------------------------------------- Logik
@@ -477,9 +480,74 @@ function abrechnen() {
 function einzahlen(betrag, notiz) {
   if (!Number.isFinite(betrag) || betrag <= 0) return { ok: false, fehler: 'Bitte einen Betrag größer als 0 eingeben.' };
   state.saldo += betrag;
-  transaktion('einzahlung', betrag, notiz);
+  const id = transaktion('einzahlung', betrag, notiz);
   speichere();
-  return { ok: true };
+  return { ok: true, id };
+}
+
+/*
+  Eine eben gemachte Buchung zurücknehmen - für den Tippfehler (56 statt
+  5,60), nicht zum Schönen der Bilanz. Deshalb nur spontane Ausgaben und
+  Einzahlungen von heute; die Oberfläche bietet es nur ein paar Sekunden
+  lang direkt nach dem Buchen an. Alles andere läuft über die Korrektur.
+*/
+function buchungZuruecknehmen(id) {
+  const i = state.transaktionen.findIndex(t => String(t.id) === String(id));
+  if (i < 0) return { ok: false, fehler: 'Diese Buchung gibt es nicht mehr.' };
+  const t = state.transaktionen[i];
+  if (t.datum !== heuteISO()) return { ok: false, fehler: 'Nur Buchungen von heute lassen sich zurücknehmen.' };
+  if (t.typ === 'ausgabe' && !t.art) state.saldo += t.betrag;
+  else if (t.typ === 'einzahlung') state.saldo -= t.betrag;
+  else return { ok: false, fehler: 'Diese Buchung lässt sich nicht zurücknehmen.' };
+  state.transaktionen.splice(i, 1);
+  speichere();
+  return { ok: true, typ: t.typ, betrag: t.betrag };
+}
+
+/*
+  Serie: seit wie vielen Tagen gab es keine spontane Ausgabe? Das dreht die
+  Musteranzeige um - nicht „so viel ging schief“, sondern „so lange hält es
+  schon“. Eine Serie will man nicht reißen lassen, und genau das bremst.
+  Gezählt wird ab der letzten spontanen Ausgabe; gab es nie eine, ab der
+  ältesten Buchung überhaupt. `rekord` ist die längste Strecke in der
+  Historie, die laufende eingeschlossen.
+  -> null ohne Buchungen, sonst { tage, rekord, nie }
+*/
+function spontanSerie(jetzt) {
+  if (!state.transaktionen.length) return null;
+  const d = jetzt ? new Date(jetzt) : new Date();
+  const t0 = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const anfang = state.transaktionen.reduce((min, t) => (String(t.datum) < min ? String(t.datum) : min), isoVon(t0));
+  const kaeufe = [...new Set(state.transaktionen.filter(t => t.typ === 'ausgabe' && !t.art).map(t => String(t.datum)))].sort();
+  const marken = [anfang, ...kaeufe];
+  let rekord = 0;
+  for (let i = 1; i < marken.length; i++) {
+    rekord = Math.max(rekord, tageZwischen(datumVon(marken[i - 1]), datumVon(marken[i])));
+  }
+  const tage = Math.max(0, tageZwischen(datumVon(marken[marken.length - 1]), t0));
+  return { tage, rekord: Math.max(rekord, tage), nie: kaeufe.length === 0 };
+}
+
+/*
+  Backup-Gedächtnis: die Daten liegen nur auf diesem Gerät, also merkt sich
+  die App, wann zuletzt exportiert wurde, und erinnert nach BACKUP_TAGE.
+  Wer noch nie gesichert hat, wird erst erinnert, wenn es etwas zu verlieren
+  gibt (ab BACKUP_AB_BUCHUNGEN Buchungen).
+*/
+const BACKUP_TAGE = 14;
+const BACKUP_AB_BUCHUNGEN = 10;
+
+function backupStand(jetzt) {
+  const d = jetzt ? new Date(jetzt) : new Date();
+  const t0 = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const tage = state.backup ? Math.max(0, tageZwischen(datumVon(state.backup), t0)) : null;
+  const faellig = tage === null ? state.transaktionen.length >= BACKUP_AB_BUCHUNGEN : tage >= BACKUP_TAGE;
+  return { datum: state.backup || null, tage, faellig };
+}
+
+function backupMerken() {
+  state.backup = heuteISO();
+  speichere();
 }
 
 /*
@@ -575,9 +643,9 @@ function ausgeben(betrag, notiz, art, grundbedarf) {
   const extra = {};
   if (art === 'einkauf' || art === 'wunsch') extra.art = art;
   if (p.warnung) extra.gewarnt = true;
-  transaktion('ausgabe', betrag, notiz, extra);
+  const id = transaktion('ausgabe', betrag, notiz, extra);
   speichere();
-  return { ok: true, warnung: p.warnung, gruende: p.gruende };
+  return { ok: true, warnung: p.warnung, gruende: p.gruende, id };
 }
 
 /*
@@ -1491,6 +1559,7 @@ if (typeof globalThis !== 'undefined') {
     sparRateProTag, sparzielVergleich,
     einkaufGrundbedarf, sofortKauf,
     saldoKorrigieren, korrekturenImMonat, periode, periodeText, stichtagSetzen, eanGueltig, eanAusZeile,
+    buchungZuruecknehmen, spontanSerie, backupStand, backupMerken, BACKUP_TAGE, BACKUP_AB_BUCHUNGEN,
   };
 }
 
@@ -1524,7 +1593,7 @@ if (istBrowser) {
     'ek-menge', 'ek-preis', 'ek-urteil', 'ek-aus-vorrat', 'einkauf-liste', 'einkauf-leer',
     'einkauf-summe', 'ek-echt', 'ek-laden', 'ek-buchen', 'ek-leeren', 'ek-fuss', 'ek-buchen-summe',
     'tagesbudget', 'aus-budget', 'aus-parken', 'muster', 'install-bereich', 'install-einst',
-    'stichtag-hinweis', 'stichtag-wahl', 'stichtag-fix-feld', 'stichtag-tag', 'stichtag-datum-feld',
+    'stichtag-hinweis', 'backup-hinweis', 'backup-stand', 'serie', 'aus-serie', 'stichtag-wahl', 'stichtag-fix-feld', 'stichtag-tag', 'stichtag-datum-feld',
     'stichtag-datum', 'stichtag-speichern', 'stichtag-info',
     'form-korrektur', 'korr-betrag', 'korr-notiz', 'korr-info', 'korr-auf', 'korr-submit', 'korr-folgen',
     'wunsch-liste', 'wunsch-leer', 'wunsch-bilanz', 'form-wunsch', 'wun-name', 'wun-betrag',
@@ -1541,15 +1610,47 @@ if (istBrowser) {
 
   // -------------------------------------------------------------- Rückmeldung
 
-  toast = function (text, art) {
+  /*
+    `aktion` hängt einen Knopf an die Meldung: { label, tun, bleibt }.
+    Mit Knopf bleibt sie länger stehen, mit `bleibt` bis zum Antippen.
+  */
+  toast = function (text, art, aktion) {
     const box = knoten['toast'];
     if (!box) return;
     box.textContent = text;
     box.className = 'toast' + (art ? ' toast-' + art : '');
+    if (aktion) {
+      const knopf = document.createElement('button');
+      knopf.type = 'button';
+      knopf.className = 'toast-knopf';
+      knopf.textContent = aktion.label;
+      knopf.addEventListener('click', e => {
+        e.stopPropagation();
+        clearTimeout(toast._t);
+        box.hidden = true;
+        aktion.tun();
+      });
+      box.appendChild(knopf);
+    }
     box.hidden = false;
     clearTimeout(toast._t);
-    toast._t = setTimeout(() => { box.hidden = true; }, 3500);
+    if (!(aktion && aktion.bleibt)) {
+      toast._t = setTimeout(() => { box.hidden = true; }, aktion ? 8000 : 3500);
+    }
   };
+
+  // „Rückgängig“ für eine eben gemachte Buchung
+  function ruecknahme(id, meldung) {
+    return {
+      label: 'Rückgängig',
+      tun: () => {
+        const r = buchungZuruecknehmen(id);
+        if (!r.ok) return toast(r.fehler, 'warn');
+        rendAlle();
+        toast(meldung);
+      },
+    };
+  }
 
   // Toast wegtippen, falls er stört
   knoten['toast'].addEventListener('click', () => {
@@ -1700,10 +1801,53 @@ if (istBrowser) {
     }
     knoten['muster'].textContent = satz.join('. ') + '.';
 
+    // Die Serie: seit wann nichts Spontanes
+    const s = spontanSerie();
+    let serie = '';
+    if (s) {
+      const rekord = s.rekord >= 3 && s.rekord > s.tage ? ' Dein Rekord: ' + s.rekord + ' Tage.' : '';
+      if (s.tage === 0) serie = 'Heute spontan ausgegeben – morgen beginnt eine neue Serie.' + rekord;
+      else if (s.tage === 1) serie = (s.nie ? 'Seit gestern dabei, nichts Spontanes.' : 'Seit gestern nichts Spontanes.') + rekord;
+      else serie = 'Seit ' + s.tage + ' Tagen nichts Spontanes' + (s.tage >= 3 && s.tage >= s.rekord ? ' – dein Rekord.' : '.') + rekord;
+    }
+    knoten['serie'].textContent = serie;
+
+    rendBackup();
+
     const tage = restTage();
     knoten['tagesbudget'].textContent = b.frei > 0
       ? 'Tagesbudget ' + eur(tagesbudget()) + ' · noch ' + tage + (tage === 1 ? ' Tag' : ' Tage') + ' ' + periodeText().ende
       : '';
+  }
+
+  /*
+    Backup: Stand in den Einstellungen, Erinnerung auf der Übersicht.
+    `speicherFest` sagt, ob der Browser zugesagt hat, die Daten nicht von
+    sich aus zu räumen (navigator.storage.persist) - null = unbekannt.
+  */
+  let speicherFest = null;
+
+  function rendBackup() {
+    const b = backupStand();
+    const alter = b.tage === null ? null : b.tage === 0 ? 'heute' : b.tage === 1 ? 'gestern' : 'vor ' + b.tage + ' Tagen';
+    knoten['backup-hinweis'].hidden = !b.faellig;
+    knoten['backup-hinweis'].textContent = !b.faellig ? ''
+      : (alter ? 'Dein letztes Backup war ' + alter + '.' : 'Du hast noch kein Backup.') +
+        ' Deine Daten liegen nur auf diesem Gerät – tippe hier und sichere sie.';
+    knoten['backup-stand'].textContent =
+      (alter ? 'Letztes Backup: ' + alter + ' (' + datumHuebsch(b.datum) + ').' : 'Noch kein Backup erstellt.') +
+      (speicherFest === true ? ' Der Browser hat zugesagt, die Daten nicht von sich aus zu löschen.'
+        : speicherFest === false ? ' Der Browser kann die Daten bei Platzmangel löschen – das Backup ist deine Sicherheit.' : '');
+  }
+
+  // Den Browser um dauerhaften Speicher bitten, sobald es etwas zu verlieren gibt
+  function speicherSichern() {
+    if (speicherFest === true || !navigator.storage || !navigator.storage.persist) return;
+    if (!state.transaktionen.length && !state.posten.length && !state.artikel.length) return;
+    navigator.storage.persisted()
+      .then(fest => fest || navigator.storage.persist())
+      .then(fest => { speicherFest = !!fest; rendBackup(); })
+      .catch(() => {});
   }
 
   /*
@@ -2052,9 +2196,18 @@ if (istBrowser) {
     // Den Betrag greifbar machen: wie viele Tage Budget sind das?
     const budget = tagesbudget();
     const tage = gueltig ? budgetTageText(betrag) : null;
+    const budgetDanach = Math.floor(Math.max(0, danach) / restTage());
     knoten['aus-budget'].textContent = budget > 0
-      ? 'Tagesbudget ' + eur(budget) + (tage ? ' · diese Ausgabe = ' + tage + ' Tage' : '')
+      ? (tage
+        ? 'Diese Ausgabe = ' + tage + ' Tage Budget · danach ' + eur(budgetDanach) + ' statt ' + eur(budget) + ' pro Tag ' + periodeText().ende
+        : 'Tagesbudget ' + eur(budget))
       : 'Du hast gerade nichts frei.';
+
+    // Was auf dem Spiel steht: die laufende Serie
+    const serie = gueltig ? spontanSerie() : null;
+    knoten['aus-serie'].textContent = serie && serie.tage >= 2
+      ? 'Du hast seit ' + serie.tage + ' Tagen nichts spontan ausgegeben. Diese Ausgabe beendet die Serie.'
+      : '';
 
     // ... und gegen das Sparziel stellen
     knoten['aus-ziel'].textContent = (gueltig && sparzielVergleich(betrag)) || '';
@@ -2913,7 +3066,7 @@ if (istBrowser) {
     if (name === 'einzahlung') rendEinzahlungLive();
     if (name === 'sparen') rendSparenLive();
     if (name === 'sparziel') sparzielFormularFuellen();
-    if (name === 'einstellungen') { korrekturFuellen(); stichtagFuellen(); }
+    if (name === 'einstellungen') { korrekturFuellen(); stichtagFuellen(); rendBackup(); }
     if (name === 'sofort') {
       // Gleich die Kamera: im Laden zählt jeder Handgriff
       sofortLeeren();
@@ -3116,7 +3269,8 @@ if (istBrowser) {
     e.target.reset();
     rendAlle();
     overlaySchliessen();
-    toast(eur(betrag) + ' eingezahlt.', 'ok');
+    speicherSichern();
+    toast(eur(betrag) + ' eingezahlt.', 'ok', ruecknahme(r.id, 'Einzahlung zurückgenommen.'));
   });
 
   knoten['form-ausgabe'].addEventListener('submit', e => {
@@ -3145,7 +3299,8 @@ if (istBrowser) {
     if (!r.ok) return toast(r.fehler, 'warn');
     rendAlle();
     overlaySchliessen();
-    toast(eur(betrag) + ' ausgegeben.', 'ok');
+    speicherSichern();
+    toast(eur(betrag) + ' ausgegeben.', 'ok', ruecknahme(r.id, 'Ausgabe zurückgenommen.'));
   });
 
   // Aus dem Ausgabe-Blatt heraus parken statt kaufen: Betrag und Zweck wandern mit
@@ -3344,6 +3499,7 @@ if (istBrowser) {
   // ----------------------------------------------------- Backup & Reset
 
   knoten['export-knopf'].addEventListener('click', () => {
+    backupMerken();   // vor dem Schreiben: das Datum steht dann auch in der Datei
     const blob = new Blob([exportDaten()], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -3353,6 +3509,8 @@ if (istBrowser) {
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+    rendBackup();
+    speicherSichern();
     toast('Backup erstellt.', 'ok');
   });
 
@@ -3581,9 +3739,27 @@ if (istBrowser) {
     const reif = offeneWuensche().filter(w => wunschReif(w)).length;
     if (gebucht || reif > reifBisher) startMeldung(gebucht);
     reifBisher = reif;
+    if (neuPruefen) neuPruefen();
   });
 
+  speicherSichern();
+
+  /*
+    Eine installierte App bleibt oft tagelang offen. Kommt in der Zeit eine
+    neue Version, übernimmt der neue Service Worker zwar sofort, die offene
+    Seite läuft aber mit dem alten Code weiter - deshalb der Hinweis. Beim
+    allerersten Start (noch kein Wächter) ist nichts „neu“.
+  */
+  let neuPruefen = null;
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
+    const hatteWaechter = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!hatteWaechter) return;
+      toast('Neue Version von iNeedMoney ist da.', 'ok',
+        { label: 'Neu laden', bleibt: true, tun: () => location.reload() });
+    });
+    navigator.serviceWorker.register('sw.js')
+      .then(reg => { neuPruefen = () => reg.update().catch(() => {}); })
+      .catch(() => {});
   }
 }

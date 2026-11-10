@@ -1133,6 +1133,72 @@ for (const id of ['stichtag-wahl', 'stichtag-tag', 'stichtag-datum', 'stichtag-s
   assert(htmlIds.has(id), '#' + id + ' steht im HTML');
 }
 
+block('Rueckgaengig');
+{
+  L.zuruecksetzen();
+  L.einzahlen(50000, 'Start');
+  const a = L.ausgeben(5600, 'Tippfehler');
+  assert(typeof a.id === 'string' && L.state.saldo === 44400, 'ausgeben() liefert die Id der Buchung');
+  const r = L.buchungZuruecknehmen(a.id);
+  assert(r.ok && L.state.saldo === 50000, 'die Ausgabe ist zurueck auf dem Konto');
+  assert(!L.state.transaktionen.some(t => t.id === a.id) && gespeichert().saldo === 50000, 'die Buchung ist weg und gespeichert');
+  assert(L.monatsMuster().anzahl === 0, 'sie zaehlt nicht mehr als spontane Ausgabe');
+  assert(!L.buchungZuruecknehmen(a.id).ok, 'zweimal zuruecknehmen geht nicht');
+  const e = L.einzahlen(1000, 'falsch');
+  assert(L.buchungZuruecknehmen(e.id).ok && L.state.saldo === 50000, 'eine Einzahlung laesst sich zuruecknehmen');
+  const alt = L.ausgeben(300, 'gestern');
+  L.state.transaktionen.find(t => t.id === alt.id).datum = '2020-01-01';
+  assert(!L.buchungZuruecknehmen(alt.id).ok && L.state.saldo === 49700, 'aeltere Buchungen bleiben stehen');
+  L.saldoKorrigieren(40000, 'Test der Korrektur');
+  const k = L.state.transaktionen.find(t => t.typ === 'korrektur');
+  assert(!L.buchungZuruecknehmen(k.id).ok && L.state.saldo === 40000, 'eine Korrektur laesst sich so nicht zuruecknehmen');
+}
+
+block('Serie ohne Spontankauf');
+{
+  L.zuruecksetzen();
+  assert(L.spontanSerie() === null, 'ohne Buchungen gibt es keine Serie');
+  const tag = n => { const d = new Date(); return L.isoVon(new Date(d.getFullYear(), d.getMonth(), d.getDate() - n)); };
+  L.einzahlen(100000, 'Start');
+  L.state.transaktionen[0].datum = tag(20);
+  let s = L.spontanSerie();
+  assert(s.tage === 20 && s.nie === true && s.rekord === 20, 'ohne spontane Ausgabe zaehlt es ab der ersten Buchung');
+  L.ausgeben(500, 'a'); L.state.transaktionen[0].datum = tag(15);
+  L.ausgeben(500, 'b'); L.state.transaktionen[0].datum = tag(6);
+  s = L.spontanSerie();
+  assert(s.tage === 6 && s.nie === false, 'gezaehlt wird ab der letzten spontanen Ausgabe');
+  assert(s.rekord === 9, 'der Rekord ist die laengste Strecke dazwischen');
+  L.ausgeben(2000, 'Wocheneinkauf', 'einkauf');
+  assert(L.spontanSerie().tage === 6, 'ein Einkauf von der Liste beendet die Serie nicht');
+  const heuteKauf = L.ausgeben(500, 'c');
+  assert(L.spontanSerie().tage === 0 && L.spontanSerie().rekord === 9, 'eine spontane Ausgabe heute setzt sie auf 0, der Rekord bleibt');
+  L.buchungZuruecknehmen(heuteKauf.id);
+  assert(L.spontanSerie().tage === 6, 'zurueckgenommen laeuft die Serie weiter');
+}
+
+block('Backup-Erinnerung');
+{
+  L.zuruecksetzen();
+  assert(L.backupStand().faellig === false && L.backupStand().tage === null, 'leere App: keine Erinnerung');
+  L.einzahlen(100000, 'Start');
+  for (let i = 0; i < L.BACKUP_AB_BUCHUNGEN - 2; i++) L.ausgeben(100, 'x');
+  assert(L.backupStand().faellig === false, 'wenige Buchungen: noch keine Erinnerung');
+  L.ausgeben(100, 'x');
+  assert(L.backupStand().faellig === true, 'ab ' + L.BACKUP_AB_BUCHUNGEN + ' Buchungen ohne Backup wird erinnert');
+  L.backupMerken();
+  assert(L.backupStand().tage === 0 && L.backupStand().faellig === false && gespeichert().backup === L.backupStand().datum, 'nach dem Export ist Ruhe, das Datum ist gespeichert');
+  const spaeter = Date.now() + L.BACKUP_TAGE * 86400000;
+  assert(L.backupStand(spaeter - 86400000).faellig === false && L.backupStand(spaeter).faellig === true, 'nach ' + L.BACKUP_TAGE + ' Tagen wird wieder erinnert');
+  const kopie = L.exportDaten();
+  L.zuruecksetzen();
+  assert(L.importDaten(kopie).ok && L.backupStand().tage === 0, 'das Backup-Datum uebersteht Export und Import');
+  assert(L.normalisiere({ saldo: 1, backup: 'unsinn' }).backup === null, 'ein kaputtes Datum wird verworfen');
+}
+for (const id of ['backup-hinweis', 'backup-stand', 'serie', 'aus-serie']) {
+  assert(htmlIds.has(id), '#' + id + ' steht im HTML');
+}
+assert(/controllerchange/.test(appJs) && /navigator\.storage\.persist\(\)/.test(appJs), 'Update-Hinweis und dauerhafter Speicher sind verdrahtet');
+
 // ------------------------------------------------------------------ Fazit
 
 if (fehler) {

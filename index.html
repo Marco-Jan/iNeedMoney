@@ -50,6 +50,7 @@
         <p class="held-budget" id="tagesbudget"></p>
         <p class="warnung" id="monat-frei-hinweis" hidden></p>
         <button type="button" class="warnung warnung-sanft hinweis-knopf" id="stichtag-hinweis" data-oeffnet="einstellungen" hidden></button>
+        <button type="button" class="warnung warnung-sanft hinweis-knopf" id="backup-hinweis" data-oeffnet="einstellungen" hidden></button>
       </div>
 
       <div class="aktionen-gross">
@@ -116,6 +117,7 @@
           <span class="monat-wert" id="monat-posten">0,00&nbsp;&euro;</span>
         </div>
       </div>
+      <p class="serie" id="serie"></p>
       <p class="fussnote oben" id="muster"></p>
 
       <section class="block">
@@ -355,6 +357,7 @@
             </div>
             <span class="budget-fuss" id="aus-budget"></span>
             <span class="budget-fuss" id="aus-ziel"></span>
+            <span class="budget-fuss budget-serie" id="aus-serie"></span>
           </div>
           <div id="ausgabe-warnung" class="warnung" role="status" hidden></div>
           <label for="aus-notiz">Wof&uuml;r? (optional)</label>
@@ -557,6 +560,7 @@
 
         <h3 class="unter-titel">Backup</h3>
         <p class="fussnote oben">Alle Daten liegen nur auf diesem Ger&auml;t. Ein Backup schreibt sie in eine Datei, die du sichern kannst.</p>
+        <p class="fussnote oben" id="backup-stand"></p>
         <button type="button" id="export-knopf" class="knopf">Backup exportieren</button>
         <label for="import-datei" class="knopf datei-label" id="import-label" role="button" tabindex="0">Backup importieren</label>
         <input type="file" id="import-datei" accept="application/json,.json">

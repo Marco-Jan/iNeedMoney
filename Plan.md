@@ -89,6 +89,22 @@ prüfen, dass UI und HTML zueinander passen.
         „einen Monat später" weitergerechnet. `monatsBilanz()` & Co. filtern
         ohne Argument nach dem Zeitraum, mit `monatsKey` nach dem Kalendermonat.
         Der Kalender im Posten-Tab bleibt monatsweise.
+  - [x] **Rückgängig**: nach einer spontanen Ausgabe oder Einzahlung steht
+        8 Sekunden lang „Rückgängig" in der Meldung (`buchungZuruecknehmen()`,
+        nur Buchungen von heute). Für den Tippfehler gedacht; alles andere läuft
+        über die Korrektur mit Reibung. Einkauf, Sofortkauf und Wunsch haben das
+        bewusst nicht (sie ändern auch Vorrat/Listen).
+  - [x] **Serie** (`spontanSerie()`): „Seit N Tagen nichts Spontanes" auf der
+        Übersicht, mit Rekord; im Ausgabe-Blatt steht, dass die Ausgabe die Serie
+        beendet. Dort auch „danach X statt Y pro Tag".
+  - [x] **Backup-Erinnerung**: `state.backup` merkt das Datum des letzten
+        Exports; `backupStand()` meldet `faellig` nach 14 Tagen bzw. ab 10
+        Buchungen ohne Backup, die Übersicht zeigt dann einen Hinweis. Dazu
+        bittet die App den Browser um dauerhaften Speicher
+        (`navigator.storage.persist()`).
+  - [x] **Update-Hinweis**: übernimmt ein neuer Service Worker
+        (`controllerchange`), erscheint „Neue Version – Neu laden"; beim
+        Zurückkehren in die App wird nach einer neuen Version gesucht.
   - [x] **Kontostand korrigieren** (Einstellungen): `saldoKorrigieren()` setzt
         den Stand und bucht den Unterschied als eigene Art `'korrektur'`
         (`plus: true` = nach oben). Zählt weder als Ausgabe noch als
@@ -105,7 +121,7 @@ prüfen, dass UI und HTML zueinander passen.
         Inline-Skript im `<head>` setzt das Attribut vor dem ersten Zeichnen,
         sonst blitzt das falsche Schema auf.
 - [x] **Offline/PWA**: `manifest.json` (verlinkt!) + Service Worker (`sw.js`, Cache
-      `inneedmoney-v14`): Navigation und Assets „Netz zuerst, Cache als Rückfall",
+      `inneedmoney-v15`): Navigation und Assets „Netz zuerst, Cache als Rückfall",
       damit HTML, CSS und JS nach einem Deploy zusammenpassen. Alle Assets lokal.
 - [x] **Sprache**: UI auf Deutsch.
 - [x] **Design**: flache, ruhige Oberfläche in Dunkel und Hell mit Gold als

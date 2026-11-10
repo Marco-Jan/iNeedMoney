@@ -1306,6 +1306,38 @@ input[type="text"].inline-preis {
 }
 
 .toast-ok { border-color: var(--akzent-text); }
+
+/* Knopf in der Meldung: „Rückgängig“, „Neu laden“ */
+.toast-knopf {
+  margin-left: 0.75rem;
+  padding: 0.25rem 0.1rem;
+  border: 0;
+  background: none;
+  color: var(--akzent-text);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+
+/* Serie ohne Spontankauf - etwas lauter als die Fussnote darunter */
+.serie {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.serie:empty,
+.budget-serie:empty {
+  display: none;
+}
+
+.budget-serie {
+  color: var(--text);
+  font-weight: 600;
+}
 .toast-warn { border-color: var(--warn); color: var(--warn-text); background: var(--warn-flaeche); }
 
 @keyframes hochschieben {
