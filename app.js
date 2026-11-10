@@ -376,7 +376,7 @@ function einzahlen(betrag, notiz) {
   -> { ok:false, fehler } bei zu wenig Saldo
   -> { ok:true, warnung } wenn Betrag > 1/3 der offenen Posten
 */
-function pruefeAusgabe(betrag) {
+function pruefeAusgabe(betrag, grundbedarf) {
   if (!Number.isFinite(betrag) || betrag <= 0) return { ok: false, fehler: 'Bitte einen Betrag größer als 0 eingeben.' };
   if (betrag > state.saldo) {
     return { ok: false, fehler: 'Dein Konto (' + eur(state.saldo) + ') reicht für ' + eur(betrag) + ' nicht aus.' };
@@ -389,15 +389,23 @@ function pruefeAusgabe(betrag) {
   const texte = [];
   const frei = freiVerfuegbar();
   const budget = tagesbudget();
+  /*
+    Grundbedarf (Lebensmittel aus dem Vorrat) ist kein Impulskauf: dieser
+    Anteil zählt für die Budget- und die Drittel-Regel nicht mit. Die Regel
+    „mehr als frei verfügbar“ gilt weiter für den ganzen Betrag - auch Brot
+    darf nicht unbemerkt das Geld für die Miete nehmen.
+  */
+  const gedeckt = Math.max(0, Math.min(betrag, Number.isFinite(grundbedarf) ? Math.round(grundbedarf) : 0));
+  const rest = betrag - gedeckt;
 
   if (betrag > Math.max(0, frei)) {
     // Mehr als das freie Geld: der Rest ginge an reservierte Posten
     gruende.push('reserviert');
     texte.push(eur(betrag) + ' ist mehr, als du frei hast (' + eur(Math.max(0, frei)) +
       '). Es fehlen dann ' + eur(betrag - frei) + ' für deine offenen Posten.');
-  } else if (budget > 0 && betrag > budget * BUDGET_TAGE_WARNUNG) {
+  } else if (budget > 0 && rest > budget * BUDGET_TAGE_WARNUNG) {
     gruende.push('budget');
-    texte.push(eur(betrag) + ' sind ' + budgetTageText(betrag) + ' Tage deines Budgets (' +
+    texte.push(eur(rest) + ' sind ' + budgetTageText(rest) + ' Tage deines Budgets (' +
       eur(budget) + ' pro Tag bis Monatsende).');
   }
 
@@ -405,16 +413,19 @@ function pruefeAusgabe(betrag) {
   // Startseite. Ein 14-Tage-Posten, der zweimal im Monat fällt, zählt zweimal.
   const termine = offeneTermine();
   const offen = summeOffen();
-  if (offen > 0 && betrag > warnschwelle()) {
+  if (offen > 0 && rest > warnschwelle()) {
     gruende.push('drittel');
-    texte.push(eur(betrag) + ' ist mehr als ein Drittel deiner noch offenen Posten (' + eur(offen) +
+    texte.push(eur(rest) + ' ist mehr als ein Drittel deiner noch offenen Posten (' + eur(offen) +
       ' in ' + termine.length + (termine.length === 1 ? ' Termin' : ' Terminen') + '). Das könnte deinen Sparplan kippen.');
   }
-  return { ok: true, warnung: texte.length ? texte.join(' ') : null, gruende };
+  if (gedeckt > 0 && (gruende.includes('budget') || gruende.includes('drittel'))) {
+    texte.unshift('Neben ' + eur(gedeckt) + ' Grundbedarf sind es ' + eur(rest) + ' für anderes.');
+  }
+  return { ok: true, warnung: texte.length ? texte.join(' ') : null, gruende, grundbedarf: gedeckt };
 }
 
-function ausgeben(betrag, notiz, art) {
-  const p = pruefeAusgabe(betrag);
+function ausgeben(betrag, notiz, art, grundbedarf) {
+  const p = pruefeAusgabe(betrag, grundbedarf);
   if (!p.ok) return p;
   state.saldo -= betrag;
   const extra = {};
@@ -825,6 +836,8 @@ function artikelNormalisieren(a) {
     einheit: EINHEITEN.includes(a.einheit) ? a.einheit : 'Stk',
     menge: Math.max(0, zahl(a.menge)),
     mindest: Math.max(0, zahl(a.mindest)),
+    // Grundbedarf (z. B. Lebensmittel): Käufe davon lösen keine Impuls-Warnung aus
+    grundbedarf: a.grundbedarf === true,
     letzterPreis: preise.length ? preise[0].preis
       : (Number.isFinite(a.letzterPreis) && a.letzterPreis > 0 ? zahl(a.letzterPreis) : null),
     bestPreis: guenstigste ? guenstigste.preis : null,
@@ -869,7 +882,7 @@ function artikelNachName(name) {
   return state.artikel.find(a => a.name.trim().toLowerCase() === sauber) || null;
 }
 
-function artikelSpeichern({ id, ean, name, einheit, menge, mindest }) {
+function artikelSpeichern({ id, ean, name, einheit, menge, mindest, grundbedarf }) {
   const sauber = String(name || '').trim();
   if (!sauber) return { ok: false, fehler: 'Bitte einen Namen eingeben.' };
 
@@ -890,6 +903,7 @@ function artikelSpeichern({ id, ean, name, einheit, menge, mindest }) {
     einheit: einheit || (vorhanden ? vorhanden.einheit : 'Stk'),
     menge: Number.isFinite(menge) ? menge : (vorhanden ? vorhanden.menge : 0),
     mindest: Number.isFinite(mindest) ? mindest : (vorhanden ? vorhanden.mindest : 0),
+    grundbedarf: typeof grundbedarf === 'boolean' ? grundbedarf : (vorhanden ? vorhanden.grundbedarf : false),
   });
 
   if (vorhanden) Object.assign(vorhanden, entwurf);
@@ -1018,6 +1032,14 @@ function einkaufSumme() {
   return state.einkauf.reduce((x, z) => x + z.preis * z.menge, 0);
 }
 
+// Der Teil der Einkaufsliste, der Grundbedarf ist (in Cent)
+function einkaufGrundbedarf() {
+  return state.einkauf.reduce((x, z) => {
+    const a = z.artikelId ? artikelNachId(z.artikelId) : null;
+    return x + (a && a.grundbedarf ? z.preis * z.menge : 0);
+  }, 0);
+}
+
 /*
   Der Kern der Budget-Planung: die Einkaufsliste wird wie eine geplante
   spontane Ausgabe behandelt und durch dieselbe Prüfung geschickt wie jede
@@ -1031,6 +1053,7 @@ function einkaufBudget() {
     positionen: state.einkauf.length,
     stueck: state.einkauf.reduce((x, z) => x + z.menge, 0),
     ohnePreis: state.einkauf.filter(z => z.preis <= 0).length,
+    grundbedarf: einkaufGrundbedarf(),
     frei: state.saldo - summeOffen(),
     schwelle: warnschwelle(),
     saldo: state.saldo,
@@ -1044,7 +1067,7 @@ function einkaufBudget() {
         : 'Die Einkaufsliste ist leer.',
     };
   }
-  const pruefung = pruefeAusgabe(gesamt);
+  const pruefung = pruefeAusgabe(gesamt, einkaufGrundbedarf());
   return {
     ...basis,
     ok: pruefung.ok,
@@ -1069,12 +1092,13 @@ function einkaufAbschliessen(echteSumme, laden) {
   const betrag = Number.isFinite(echteSumme) && echteSumme > 0 ? Math.round(echteSumme) : geplant;
   if (betrag <= 0) return { ok: false, fehler: 'Bitte Preise eintragen oder die bezahlte Summe angeben.' };
 
-  const pruefung = pruefeAusgabe(betrag);
+  const grund = einkaufGrundbedarf();
+  const pruefung = pruefeAusgabe(betrag, grund);
   if (!pruefung.ok) return pruefung;
 
   const notiz = 'Einkauf' + (laden ? ' ' + String(laden).trim() : '') +
     ' · ' + state.einkauf.length + (state.einkauf.length === 1 ? ' Position' : ' Positionen');
-  const r = ausgeben(betrag, notiz, 'einkauf');
+  const r = ausgeben(betrag, notiz, 'einkauf', grund);
   if (!r.ok) return r;
 
   const urteile = [];
@@ -1111,6 +1135,61 @@ function einkaufAusVorrat() {
   return { ok: true, dazu, gefunden: fehlt.length };
 }
 
+/*
+  Sofortkauf im Laden: scannen, Preis bestätigen, fertig. Bucht EINEN Artikel
+  direkt vom Konto, merkt sich den Preis, füllt den Vorrat und streicht ihn
+  von der Einkaufsliste, falls er dort steht.
+
+  Grundbedarf wird als geplanter Einkauf gebucht und warnt nur, wenn das
+  freie Geld nicht reicht. Alles andere ist eine spontane Ausgabe wie jede
+  andere - mit allen Warnungen und in der Musteranzeige.
+*/
+function sofortKauf({ artikelId, ean, name, preis, menge, grundbedarf, laden }) {
+  const eanSauber = String(ean || '').replace(/\D/g, '').slice(0, 14);
+  const bezeichnung = String(name || '').trim();
+  let a = (artikelId ? artikelNachId(artikelId) : null) ||
+    (eanSauber ? artikelNachEan(eanSauber) : null) || artikelNachName(bezeichnung);
+  if (!a && !bezeichnung) return { ok: false, fehler: 'Bitte einen Namen eingeben.' };
+
+  const stueckpreis = Number.isFinite(preis) && preis > 0 ? Math.round(preis)
+    : (a && a.letzterPreis ? a.letzterPreis : 0);
+  if (stueckpreis <= 0) return { ok: false, fehler: 'Bitte den Preis eingeben.' };
+  const anzahl = Math.max(1, Math.round(Number.isFinite(menge) ? menge : 1));
+  const betrag = stueckpreis * anzahl;
+  const grund = typeof grundbedarf === 'boolean' ? grundbedarf : !!(a && a.grundbedarf);
+
+  // Erst prüfen, dann anlegen: ein abgelehnter Kauf hinterlässt keinen Artikel
+  const pruefung = pruefeAusgabe(betrag, grund ? betrag : 0);
+  if (!pruefung.ok) return pruefung;
+
+  if (!a) {
+    const neu = artikelSpeichern({ ean: eanSauber, name: bezeichnung, grundbedarf: grund });
+    if (!neu.ok) return neu;
+    a = neu.artikel;
+  } else {
+    a.grundbedarf = grund;
+    if (!a.ean && eanSauber && !artikelNachEan(eanSauber)) a.ean = eanSauber;
+  }
+
+  const urteil = preisUrteil(a.id, stueckpreis);
+  const r = ausgeben(betrag, (anzahl > 1 ? anzahl + '× ' : '') + a.name,
+    grund ? 'einkauf' : undefined, grund ? betrag : 0);
+  if (!r.ok) return r;
+
+  a.preise.unshift({ preis: stueckpreis, datum: heuteISO(), laden: String(laden || '') });
+  if (a.preise.length > MAX_PREISE) a.preise.length = MAX_PREISE;
+  a.menge += anzahl;
+  Object.assign(a, artikelNormalisieren(a));
+
+  const pos = state.einkauf.find(z => z.artikelId === a.id);
+  if (pos) {
+    pos.menge -= anzahl;
+    if (pos.menge <= 0) state.einkauf = state.einkauf.filter(z => z !== pos);
+  }
+  speichere();
+  return { ok: true, betrag, artikel: a, grundbedarf: grund, warnung: r.warnung || null, urteil, vonListe: !!pos };
+}
+
 // Für den Logik-Test ohne Browser
 if (typeof globalThis !== 'undefined') {
   globalThis.Logik = {
@@ -1131,6 +1210,7 @@ if (typeof globalThis !== 'undefined') {
     wunschVerwerfen, wunschKaufen, wunschBilanz, monatsMuster,
     sparzielSetzen, sparzielStand, sparzielEinzahlen, sparzielEntnehmen, sparzielAufloesen,
     sparRateProTag, sparzielVergleich,
+    einkaufGrundbedarf, sofortKauf,
   };
 }
 
@@ -1168,6 +1248,8 @@ if (istBrowser) {
     'sparziel-karte', 'sparziel-leer', 'sparziel-aendern', 'sparziel-name', 'sparziel-stand',
     'sparziel-balken', 'sparziel-rest', 'form-sparen', 'sp-betrag', 'sp-info', 'sp-entnehmen',
     'form-sparziel', 'sz-name', 'sz-ziel', 'sz-aufloesen', 'aus-ziel',
+    'form-sofort', 'so-name', 'so-scan', 'so-menge', 'so-preis', 'so-grund', 'so-urteil',
+    'so-warnung', 'so-danach', 'so-submit', 'art-grund',
     'vorrat-hinweis', 'form-artikel', 'art-id', 'art-name', 'art-ean', 'art-scan', 'art-einheit',
     'art-menge', 'art-mindest', 'art-submit', 'art-abbrechen', 'vorrat-liste', 'vorrat-leer',
     'scanner', 'scanner-video', 'scanner-status', 'scanner-manuell', 'scanner-ean', 'scanner-ok', 'scanner-zu',
@@ -1964,6 +2046,7 @@ if (istBrowser) {
     knoten['einkauf-summe'].textContent = b.positionen
       ? b.positionen + (b.positionen === 1 ? ' Position' : ' Positionen') + ' · ' +
         b.stueck + ' Stück · Summe ' + eur(b.summe) +
+        (b.grundbedarf ? ' · davon Grundbedarf ' + eur(b.grundbedarf) : '') +
         (b.ohnePreis ? ' · ' + b.ohnePreis + ' ohne Preis' : '')
       : '';
   }
@@ -2108,7 +2191,7 @@ if (istBrowser) {
     if (!state.einkauf.length) return toast('Die Einkaufsliste ist leer.', 'warn');
     if (betrag <= 0) return toast('Bitte Preise eintragen oder die bezahlte Summe angeben.', 'warn');
 
-    const pruefung = pruefeAusgabe(betrag);
+    const pruefung = pruefeAusgabe(betrag, einkaufGrundbedarf());
     if (!pruefung.ok) return toast(pruefung.fehler, 'warn');
     if (pruefung.warnung &&
       !await frage(pruefung.warnung + '\n\nEinkauf trotzdem buchen?', 'Trotzdem buchen')) return;
@@ -2135,6 +2218,164 @@ if (istBrowser) {
     einkaufLeeren();
     rendAlle();
     toast('Liste geleert.');
+  });
+
+  // ------------------------------------------------- Scannen & gleich bezahlen
+
+  /*
+    Im Laden: scannen, Preis bestätigen, das Geld ist sofort vom Konto. Bei
+    Grundbedarf ohne Umweg; bei allem anderen greifen Warnung und Bremse wie
+    im Ausgabe-Blatt - der Scanner darf keine Abkürzung um die Reibung sein.
+  */
+  let soEan = '';
+  let soArtikelId = null;    // zuletzt erkannter Artikel, für den Haken
+  let soBremseBis = 0;
+  let soTakt = null;
+
+  function soArtikel() {
+    return (soEan ? artikelNachEan(soEan) : null) || artikelNachName(knoten['so-name'].value);
+  }
+
+  function soBetrag() {
+    const preis = zuCent(knoten['so-preis'].value);
+    const menge = Math.max(1, parseInt(knoten['so-menge'].value, 10) || 1);
+    return preis > 0 ? preis * menge : 0;
+  }
+
+  function soPruefung() {
+    const betrag = soBetrag();
+    return betrag > 0 ? pruefeAusgabe(betrag, knoten['so-grund'].checked ? betrag : 0) : null;
+  }
+
+  function soKnopf() {
+    const betrag = soBetrag();
+    const rest = Math.ceil((soBremseBis - Date.now()) / 1000);
+    const knopf = knoten['so-submit'];
+    if (soBremseBis && rest > 0) {
+      knopf.disabled = true;
+      knopf.textContent = 'Trotzdem kaufen in ' + rest + ' …';
+      return;
+    }
+    clearInterval(soTakt);
+    soTakt = null;
+    knopf.disabled = false;
+    knopf.textContent = (soBremseBis ? 'Trotzdem kaufen' : 'Kaufen') + (betrag > 0 ? ' · ' + eur(betrag) : '');
+  }
+
+  function rendSofortLive() {
+    const a = soArtikel();
+    // Der Haken folgt dem Artikel - aber nur beim Wechsel, nicht bei jedem Tastendruck
+    const id = a ? a.id : null;
+    if (id !== soArtikelId) {
+      soArtikelId = id;
+      if (a) knoten['so-grund'].checked = a.grundbedarf;
+    }
+
+    const preis = zuCent(knoten['so-preis'].value);
+    const feld = knoten['so-urteil'];
+    feld.className = 'fussnote';
+    const u = a && preis > 0 ? preisUrteil(a.id, preis) : null;
+    if (u) {
+      feld.className = 'fussnote urteil urteil-' + u.stufe;
+      feld.textContent = u.text;
+    } else if (a) {
+      feld.textContent = a.bestPreis
+        ? a.name + ': Bestpreis ' + eur(a.bestPreis) + (a.bestLaden ? ' bei ' + a.bestLaden : '')
+        : a.name + ': noch kein Preis erfasst.';
+    } else {
+      feld.textContent = soEan ? 'Barcode ' + soEan + ' – noch unbekannt, wird neu angelegt.' : '';
+    }
+
+    const betrag = soBetrag();
+    const pruefung = soPruefung();
+    const meldung = pruefung ? (pruefung.fehler || pruefung.warnung || '') : '';
+    knoten['so-warnung'].textContent = meldung;
+    knoten['so-warnung'].hidden = !meldung;
+    knoten['so-danach'].textContent = 'Frei verfügbar ' + eur(freiVerfuegbar()) +
+      (betrag > 0 ? ' · danach ' + eur(freiVerfuegbar() - betrag) : '');
+
+    // Bremse: läuft ab der ersten Warnung, startet beim Weitertippen nicht neu
+    const warnt = !!pruefung && pruefung.ok && !!pruefung.warnung;
+    if (!warnt) {
+      soBremseBis = 0;
+    } else if (!soBremseBis) {
+      soBremseBis = Date.now() + BREMSE_SEKUNDEN * 1000;
+      clearInterval(soTakt);
+      soTakt = setInterval(soKnopf, 250);
+    }
+    soKnopf();
+  }
+
+  function soScannen() {
+    scannerOeffnen(ean => {
+      soEan = ean;
+      const a = artikelNachEan(ean);
+      if (a) {
+        knoten['so-name'].value = a.name;
+        knoten['so-preis'].value = a.letzterPreis ? (a.letzterPreis / 100).toFixed(2).replace('.', ',') : '';
+        toast(a.name + ' erkannt.', 'ok');
+        knoten['so-preis'].focus();
+        knoten['so-preis'].select();
+      } else {
+        knoten['so-name'].value = '';
+        knoten['so-preis'].value = '';
+        toast('Barcode unbekannt – bitte Namen und Preis eintippen.');
+        knoten['so-name'].focus();
+      }
+      rendSofortLive();
+    });
+  }
+
+  function sofortLeeren() {
+    soEan = '';
+    soArtikelId = null;
+    soBremseBis = 0;
+    clearInterval(soTakt);
+    soTakt = null;
+    knoten['form-sofort'].reset();
+    knoten['so-menge'].value = '1';
+  }
+
+  knoten['so-scan'].addEventListener('click', soScannen);
+  for (const id of ['so-name', 'so-preis', 'so-menge']) {
+    knoten[id].addEventListener('input', () => {
+      // Wer den Namen von Hand ändert, meint nicht mehr den gescannten Artikel
+      if (id === 'so-name' && soEan && artikelNachEan(soEan)) soEan = '';
+      rendSofortLive();
+    });
+  }
+  knoten['so-grund'].addEventListener('change', rendSofortLive);
+
+  knoten['form-sofort'].addEventListener('submit', e => {
+    e.preventDefault();
+    const name = knoten['so-name'].value.trim();
+    const preis = zuCent(knoten['so-preis'].value);
+    if (!name && !soArtikel()) {
+      toast('Bitte einen Namen eingeben oder scannen.', 'warn');
+      return knoten['so-name'].focus();
+    }
+    if (!(preis > 0)) {
+      toast('Bitte den Preis eingeben.', 'warn');
+      return knoten['so-preis'].focus();
+    }
+    const pruefung = soPruefung();
+    if (pruefung && !pruefung.ok) return rendSofortLive();
+    // Die Bremse gilt auch für die Enter-Taste
+    if (pruefung && pruefung.warnung && (!soBremseBis || Date.now() < soBremseBis)) return rendSofortLive();
+
+    const r = sofortKauf({
+      ean: soEan,
+      name,
+      preis,
+      menge: parseInt(knoten['so-menge'].value, 10),
+      grundbedarf: knoten['so-grund'].checked,
+    });
+    if (!r.ok) return toast(r.fehler, 'warn');
+    rendAlle();
+    overlaySchliessen();
+    const anhang = r.urteil && r.urteil.stufe === 'best' ? ' · Bestpreis'
+      : (r.urteil && r.urteil.stufe === 'teuer' ? ' · über deinem Bestpreis' : '');
+    toast(eur(r.betrag) + ' abgezogen · frei noch ' + eur(freiVerfuegbar()) + anhang + '.', 'ok');
   });
 
   // ---------------------------------------------------------------- Vorrat
@@ -2174,6 +2415,13 @@ if (istBrowser) {
         const marke = document.createElement('span');
         marke.className = 'marke marke-offen';
         marke.textContent = a.menge === 0 ? 'leer' : 'nachkaufen';
+        li.querySelector('.z-text').appendChild(marke);
+      }
+
+      if (a.grundbedarf) {
+        const marke = document.createElement('span');
+        marke.className = 'marke marke-ok';
+        marke.textContent = 'Grundbedarf';
         li.querySelector('.z-text').appendChild(marke);
       }
 
@@ -2228,6 +2476,7 @@ if (istBrowser) {
     knoten['art-einheit'].value = a.einheit;
     knoten['art-menge'].value = a.menge;
     knoten['art-mindest'].value = a.mindest;
+    knoten['art-grund'].checked = a.grundbedarf;
     knoten['art-submit'].textContent = 'Änderung speichern';
   }
 
@@ -2261,6 +2510,7 @@ if (istBrowser) {
       einheit: knoten['art-einheit'].value,
       menge: parseInt(knoten['art-menge'].value, 10),
       mindest: parseInt(knoten['art-mindest'].value, 10),
+      grundbedarf: knoten['art-grund'].checked,
     });
     if (!r.ok) return toast(r.fehler, 'warn');
     rendAlle();
@@ -2282,6 +2532,7 @@ if (istBrowser) {
     sparziel: 'Sparziel',
     posten: 'Neuer Posten',
     vorrat: 'Neuer Artikel',
+    sofort: 'Gleich bezahlen',
     einstellungen: 'Einstellungen',
   };
 
@@ -2297,6 +2548,12 @@ if (istBrowser) {
     if (name === 'einzahlung') rendEinzahlungLive();
     if (name === 'sparen') rendSparenLive();
     if (name === 'sparziel') sparzielFormularFuellen();
+    if (name === 'sofort') {
+      // Gleich die Kamera: im Laden zählt jeder Handgriff
+      sofortLeeren();
+      rendSofortLive();
+      return soScannen();
+    }
     const ersterInput = overlay.querySelector('.overlay-body:not([hidden]) input:not([type="hidden"]):not([type="file"])');
     if (ersterInput) setTimeout(() => ersterInput.focus(), 50);
   }
@@ -2313,6 +2570,7 @@ if (istBrowser) {
     knoten['form-wunsch'].reset();
     knoten['form-sparen'].reset();
     knoten['form-sparziel'].reset();
+    sofortLeeren();
     postenFormularLeeren();
     artikelFormularLeeren();
     rendAusgabeLive();

@@ -13,6 +13,8 @@ iNeedMoney: persönliche Spar-App. Features (vom Nutzer gefordert):
   Bei einer Warnung ist „Trotzdem ausgeben" erst nach 10 Sekunden drückbar.
 - **Wunschliste mit Abkühlzeit**: ein Wunsch wird 48 Stunden geparkt und ist erst danach kaufbar; verwerfen geht jederzeit und zählt als gespart
 - **Sparziel als eigener Topf**: zurückgelegtes Geld verlässt das Konto und „frei verfügbar"; zurücklegen geht nur aus dem freien Geld, Ausgaben werden gegen das Ziel gestellt
+- **Grundbedarf**: Artikel im Vorrat lassen sich als Grundbedarf (Lebensmittel) markieren; ihr Kauf löst keine Budget-/Drittel-Warnung aus, nur noch „mehr als frei verfügbar"
+- **Scannen & gleich bezahlen**: im Laden Barcode scannen, Preis bestätigen oder eintippen, der Betrag wird sofort abgezogen (`sofortKauf()`); Nicht-Grundbedarf läuft dabei durch Warnung und Bremse
 - **Muster**: die Übersicht zeigt, wie viel diesen Monat spontan und trotz Warnung ausgegeben wurde
 
 ## Tech-Stack & harte Constraints

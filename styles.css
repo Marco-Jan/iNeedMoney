@@ -1414,3 +1414,29 @@ select:focus-visible,
 .budget-fuss:empty {
   display: none;
 }
+
+/* ------------------------------------------------ Grundbedarf & Sofortkauf */
+
+/* Ankreuzfeld mit Text daneben - gross genug fuer den Daumen */
+.haken {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 44px;
+  margin: 0.25rem 0 1rem;
+  color: var(--text);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.haken input {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  margin: 0;
+  accent-color: var(--akzent);
+}
+
+[data-panel="liste"] > .knopf.haupt + .fussnote {
+  margin-bottom: 1rem;
+}

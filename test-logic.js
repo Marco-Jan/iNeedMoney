@@ -859,6 +859,92 @@ for (const id of ['sparziel-karte', 'sparziel-leer', 'form-sparen', 'form-sparzi
 }
 assert(/data-oeffnet="sparen"/.test(indexHtml) && /data-oeffnet="sparziel"/.test(indexHtml), 'beide Spar-Blaetter haben einen Oeffner');
 
+block('Grundbedarf: Artikel-Merkmal');
+L.zuruecksetzen();
+L.einzahlen(100000, 'Start');
+const gb_brot = L.artikelSpeichern({ name: 'Brot', ean: '4000000000017', grundbedarf: true }).artikel;
+assert(gb_brot.grundbedarf === true, 'ein Artikel laesst sich als Grundbedarf markieren');
+assert(L.artikelSpeichern({ id: gb_brot.id, name: 'Brot', ean: gb_brot.ean }).artikel.grundbedarf === true,
+  'das Merkmal bleibt, wenn es beim Aendern nicht genannt wird');
+assert(L.artikelSpeichern({ name: 'Konsole' }).artikel.grundbedarf === false, 'ohne Angabe ist ein Artikel kein Grundbedarf');
+assert(L.normalisiere({ saldo: 0, artikel: [{ name: 'X', grundbedarf: 'ja' }] }).artikel[0].grundbedarf === false,
+  'nur ein echtes true zaehlt');
+assert(gespeichert().artikel.find(a => a.name === 'Brot').grundbedarf === true, 'das Merkmal ist persistiert');
+
+block('Grundbedarf: keine Warnung, solange Geld frei ist');
+const gb_grenzeG = L.tagesbudget() * L.BUDGET_TAGE_WARNUNG;
+if (gb_grenzeG > 0 && gb_grenzeG + 300 <= 100000) {
+  const b = gb_grenzeG + 100;
+  assert(L.pruefeAusgabe(b).gruende.includes('budget'), 'ohne Grundbedarf warnt die Budget-Regel');
+  assert(L.pruefeAusgabe(b, b).warnung === null, 'derselbe Betrag als Grundbedarf: keine Warnung');
+  assert(L.pruefeAusgabe(b, 200).warnung === null, 'der Grundbedarf-Anteil zaehlt fuer die Grenze nicht mit');
+  const gb_gemischt = L.pruefeAusgabe(b + 200, 100);
+  assert(gb_gemischt.gruende.includes('budget') && /Grundbedarf/.test(gb_gemischt.warnung),
+    'ist der Rest zu gross, wird trotzdem gewarnt');
+} else {
+  assert(true, 'Monatsende: Budget-Grenze nicht pruefbar, uebersprungen');
+}
+assert(!L.pruefeAusgabe(100001, 100001).ok, 'auch Grundbedarf geht nicht ueber das Konto hinaus');
+const gb_tagG = Math.min(28, new Date().getDate() + 1);
+if (gb_tagG > new Date().getDate()) {
+  L.postenSpeichern({ name: 'Miete', betrag: 90000, tag: gb_tagG });
+  const gb_knapp = L.pruefeAusgabe(20000, 20000);
+  assert(gb_knapp.ok && gb_knapp.gruende.includes('reserviert'), 'reicht das freie Geld nicht, warnt auch Grundbedarf');
+  assert(L.pruefeAusgabe(10000, 10000).warnung === null, 'innerhalb des freien Geldes bleibt Grundbedarf still');
+  L.postenLoeschen(L.state.posten[0].id);
+} else {
+  assert(true, 'heute ist Monatsende: nicht pruefbar, uebersprungen');
+}
+
+block('Grundbedarf auf der Einkaufsliste');
+L.einkaufHinzu({ artikelId: gb_brot.id, menge: 2, preis: 300 });
+L.einkaufHinzu({ name: 'Konsole', preis: 5000 });
+assert(L.einkaufGrundbedarf() === 600, 'nur die Grundbedarf-Positionen zaehlen');
+assert(L.einkaufBudget().grundbedarf === 600 && L.einkaufBudget().summe === 5600, 'das Budget kennt den Anteil');
+L.einkaufLeeren();
+
+block('Sofortkauf: scannen und gleich bezahlen');
+L.zuruecksetzen();
+L.einzahlen(100000, 'Start');
+const gb_k1 = L.sofortKauf({ ean: '4000000000024', name: 'Milch', preis: 129, menge: 2, grundbedarf: true });
+assert(gb_k1.ok && gb_k1.betrag === 258 && L.state.saldo === 100000 - 258, 'der Betrag geht sofort vom Konto');
+const gb_milch = L.artikelNachEan('4000000000024');
+assert(gb_milch && gb_milch.grundbedarf && gb_milch.menge === 2 && gb_milch.letzterPreis === 129,
+  'ein unbekannter Barcode wird als Artikel angelegt: Vorrat, Preis, Grundbedarf');
+assert(L.state.transaktionen[0].art === 'einkauf' && L.state.transaktionen[0].name === '2× Milch',
+  'Grundbedarf wird als Einkauf gebucht');
+assert(L.monatsMuster().anzahl === 0, 'und zaehlt nicht als Impulskauf');
+const gb_k2 = L.sofortKauf({ ean: '4000000000024' });
+assert(gb_k2.ok && gb_k2.betrag === 129 && gb_milch.menge === 3, 'bekannter Artikel ohne Preis: der letzte Preis gilt');
+assert(gb_k2.urteil && gb_k2.urteil.stufe === 'best', 'das Preis-Urteil kommt mit zurueck');
+const gb_artikelVor = L.state.artikel.length;
+assert(!L.sofortKauf({ ean: '4000000000031', preis: 100 }).ok, 'unbekannter Barcode ohne Namen -> Fehler');
+assert(!L.sofortKauf({ ean: '4000000000031', name: 'Kaese' }).ok, 'unbekannter Artikel ohne Preis -> Fehler');
+assert(!L.sofortKauf({ ean: '4000000000031', name: 'Gold', preis: 99999999 }).ok, 'mehr als auf dem Konto -> Fehler');
+assert(L.state.artikel.length === gb_artikelVor && !L.artikelNachEan('4000000000031'),
+  'ein abgelehnter Kauf legt keinen Artikel an');
+const gb_saldoVorSchoko = L.state.saldo;
+const gb_k3 = L.sofortKauf({ name: 'Schokolade', preis: 199 });
+assert(gb_k3.ok && L.state.saldo === gb_saldoVorSchoko - 199 && !L.state.transaktionen[0].art,
+  'kein Grundbedarf: eine spontane Ausgabe wie jede andere');
+assert(L.monatsMuster().anzahl === 1 && L.monatsMuster().summe === 199, 'die in der Musteranzeige steht');
+L.einkaufHinzu({ artikelId: gb_milch.id, menge: 3 });
+assert(L.sofortKauf({ artikelId: gb_milch.id, menge: 2 }).vonListe && L.state.einkauf[0].menge === 1,
+  'der Kauf wird von der Einkaufsliste abgezogen');
+L.sofortKauf({ artikelId: gb_milch.id });
+assert(L.state.einkauf.length === 0, 'ist alles gekauft, verschwindet die Position');
+L.sofortKauf({ artikelId: gb_milch.id, grundbedarf: false });
+assert(gb_milch.grundbedarf === false && !L.state.transaktionen[0].art, 'der Haken laesst sich beim Kauf umstellen');
+const gb_kopieG = L.exportDaten();
+L.zuruecksetzen();
+assert(L.importDaten(gb_kopieG).ok && L.artikelNachName('Schokolade').menge === 1, 'Sofortkaeufe ueberleben das Backup');
+
+block('DOM-Vertrag: Grundbedarf und Sofortkauf');
+for (const id of ['form-sofort', 'so-name', 'so-scan', 'so-preis', 'so-menge', 'so-grund', 'so-warnung', 'so-submit', 'art-grund']) {
+  assert(htmlIds.has(id), '#' + id + ' steht im HTML');
+}
+assert(/data-oeffnet="sofort"/.test(indexHtml), 'das Sofortkauf-Blatt hat einen Oeffner');
+
 // ------------------------------------------------------------------ Fazit
 
 if (fehler) {

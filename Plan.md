@@ -82,7 +82,7 @@ prüfen, dass UI und HTML zueinander passen.
         Inline-Skript im `<head>` setzt das Attribut vor dem ersten Zeichnen,
         sonst blitzt das falsche Schema auf.
 - [x] **Offline/PWA**: `manifest.json` (verlinkt!) + Service Worker (`sw.js`, Cache
-      `inneedmoney-v8`): Navigation und Assets „Netz zuerst, Cache als Rückfall",
+      `inneedmoney-v9`): Navigation und Assets „Netz zuerst, Cache als Rückfall",
       damit HTML, CSS und JS nach einem Deploy zusammenpassen. Alle Assets lokal.
 - [x] **Sprache**: UI auf Deutsch.
 - [x] **Design**: flache, ruhige Oberfläche in Dunkel und Hell mit Gold als
@@ -270,6 +270,20 @@ Der eigentliche Zweck der App. Vier Bausteine, die zusammengehören:
     Topf gelandet wäre.
   - Nach dem Verwerfen eines Wunsches bietet die App an, den Betrag gleich
     zurückzulegen.
+- **Grundbedarf** (`artikel.grundbedarf`, Haken im Artikel-Blatt): Lebensmittel
+  sind kein Impulskauf. `pruefeAusgabe(betrag, grundbedarf)` nimmt den
+  Grundbedarf-Anteil aus der Budget- und der Drittel-Regel heraus. Die Regel
+  „mehr als frei verfügbar" gilt weiter für den **ganzen** Betrag. Auf der
+  Einkaufsliste zählt `einkaufGrundbedarf()` den Anteil; eine gemischte Liste
+  warnt nur wegen des Rests.
+- **Scannen & gleich bezahlen** (`sofortKauf()`, Blatt `sofort`): im Laden
+  scannen, Preis bestätigen (bekannter Artikel: letzter Preis steht schon da),
+  der Betrag geht sofort vom Konto. Dazu Preisgedächtnis, Vorrat +Menge und
+  Abzug von der Einkaufsliste. Grundbedarf wird als `art: 'einkauf'` gebucht;
+  alles andere ist eine spontane Ausgabe mit Warnung, 10-Sekunden-Bremse und
+  Eintrag in der Musteranzeige — der Scanner ist keine Abkürzung um die
+  Reibung. Erst prüfen, dann anlegen: ein abgelehnter Kauf hinterlässt keinen
+  Artikel.
 - **Keine Benachrichtigung**: ohne Server gibt es keinen Push. Dass ein Wunsch
   reif ist, erfährt man erst beim Öffnen der App (Toast + Markierung).
 
