@@ -5,7 +5,15 @@ iNeedMoney: persönliche Spar-App. Features (vom Nutzer gefordert):
 - **Konto**: zentrales Saldo, von dem abgezogen wird
 - **Posten**: wiederkehrende monatliche Abzüge (Betrag + Tag im Monat, z. B. 56 € Strom am 28.), im Kalender sichtbar
 - **Einzahlungen** und spontane **Ausgaben** erfassen
-- **Warnung bei spontanen Ausgaben**: Betrag > 1/3 der Summe der noch offenen Posten (künftige Tage im laufenden Monat) → Warnhinweis anzeigen
+- **Zweck**: die App soll helfen, **impulsive Käufe zu vermeiden**. Reibung vor dem Ausgeben ist deshalb gewollt, nicht zu „optimieren".
+- **Warnung bei spontanen Ausgaben** (drei Gründe, alle in `pruefeAusgabe()`):
+  - Betrag > 1/3 der Summe der noch offenen Posten (künftige Tage im laufenden Monat)
+  - Betrag > 3 Tagesbudgets (Tagesbudget = frei verfügbar ÷ Tage bis Monatsende)
+  - Betrag > frei verfügbar (geht an reservierte Posten)
+  Bei einer Warnung ist „Trotzdem ausgeben" erst nach 10 Sekunden drückbar.
+- **Wunschliste mit Abkühlzeit**: ein Wunsch wird 48 Stunden geparkt und ist erst danach kaufbar; verwerfen geht jederzeit und zählt als gespart
+- **Sparziel als eigener Topf**: zurückgelegtes Geld verlässt das Konto und „frei verfügbar"; zurücklegen geht nur aus dem freien Geld, Ausgaben werden gegen das Ziel gestellt
+- **Muster**: die Übersicht zeigt, wie viel diesen Monat spontan und trotz Warnung ausgegeben wurde
 
 ## Tech-Stack & harte Constraints
 - Nur HTML + JS, **kein Framework, kein Build-Schritt, kein npm**.

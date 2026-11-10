@@ -82,7 +82,7 @@ prüfen, dass UI und HTML zueinander passen.
         Inline-Skript im `<head>` setzt das Attribut vor dem ersten Zeichnen,
         sonst blitzt das falsche Schema auf.
 - [x] **Offline/PWA**: `manifest.json` (verlinkt!) + Service Worker (`sw.js`, Cache
-      `inneedmoney-v6`): Navigation und Assets „Netz zuerst, Cache als Rückfall",
+      `inneedmoney-v8`): Navigation und Assets „Netz zuerst, Cache als Rückfall",
       damit HTML, CSS und JS nach einem Deploy zusammenpassen. Alle Assets lokal.
 - [x] **Sprache**: UI auf Deutsch.
 - [x] **Design**: flache, ruhige Oberfläche in Dunkel und Hell mit Gold als
@@ -215,10 +215,68 @@ billig für dich".
 - Browser: über lokalen HTTP-Server, z. B. `python -m http.server` — nicht per `file://`
   (Service Worker registriert sich sonst nicht).
 
+## Gegen Impulskäufe (Details)
+
+Der eigentliche Zweck der App. Vier Bausteine, die zusammengehören:
+
+- **Tagesbudget** als zweite Warnregel. Die Drittel-Regel allein hat ein Loch:
+  sind alle Posten des Monats bezahlt, ist die Schwelle 0 und es wird gar
+  nicht mehr gewarnt — ausgerechnet am Monatsende. Deshalb:
+
+      Tagesbudget = floor(frei verfügbar / Tage bis Monatsende)   (heute zählt mit)
+
+  `pruefeAusgabe()` liefert `gruende` (Kürzel) und `warnung` (Text):
+
+      'reserviert'  Betrag > frei verfügbar
+      'budget'      Betrag > 3 Tagesbudgets (`BUDGET_TAGE_WARNUNG`)
+      'drittel'     Betrag > floor(offene Termine / 3)
+
+  `reserviert` und `budget` schließen sich aus (das erste ist der stärkere
+  Fall), `drittel` kann dazukommen. Der Einkauf läuft über dieselbe Prüfung.
+- **Wunschliste** (`state.wuensche`): `{ id, name, betrag, erstellt (ms),
+  status 'offen'|'gekauft'|'verworfen', entschieden }`. Kaufen geht erst
+  `ABKUEHL_STUNDEN` (48) nach dem Parken und bucht dann eine normale Ausgabe;
+  verwerfen geht jederzeit. Die Sperre ist bewusst nur ein Stolperstein — über
+  „Ausgabe" kommt man daran vorbei, aber dann eben mit Warnung und Bremse.
+  Alle Wunsch-Funktionen nehmen optional `jetzt` (ms), damit der Test die Uhr
+  vorstellen kann.
+- **Bremse**: bei einer Warnung ist „Trotzdem ausgeben" `BREMSE_SEKUNDEN` (10)
+  lang gesperrt, auch für die Enter-Taste. Die Uhr läuft ab der ersten Warnung
+  und startet nicht neu, wenn man am Betrag weitertippt. Daneben steht immer
+  „Erst parken" als leichter Ausweg.
+- **Muster** (`monatsMuster()`): spontane Ausgaben des Monats, davon trotz
+  Warnung, dazu verworfene Wünsche. Dafür tragen Ausgaben optional
+  `art: 'einkauf'|'wunsch'` und `gewarnt: true`. Ein Einkauf von der Liste und
+  ein abgekühlter Wunsch zählen **nicht** als spontan. Buchungen von vor
+  dieser Version haben die Felder nicht und zählen deshalb alle als spontan
+  und ungewarnt.
+- **Wieder nach vorn** (`visibilitychange`): eine installierte App wird selten
+  neu geladen. Kommt sie wieder nach vorn, wird neu abgerechnet und
+  gezeichnet, sonst stehen Reststunden und fällige Posten auf dem Stand von
+  gestern. Ein offenes Blatt wird dabei nicht neu gezeichnet.
+- **Sparziel als eigener Topf** (`state.sparziel = { name, ziel, gespart } |
+  null`, genau eines). Zurückgelegtes Geld verlässt das Konto und damit „frei
+  verfügbar" — es sieht nicht mehr ausgebbar aus, und das Tagesbudget sinkt
+  mit. Bewegungen sind eigene Buchungsarten, `'sparen'` und `'entnahme'`;
+  sie zählen weder als Ausgabe noch als Einzahlung und stehen im Verlauf nur
+  unter „Alle".
+  - Zurücklegen geht **nur aus dem freien Geld**. Sonst sähe das Sparziel gut
+    aus und der Strom platzt.
+  - Auflösen gibt den Topf aufs Konto zurück; es verschwindet nie Geld.
+  - `sparzielVergleich(betrag)` stellt eine Ausgabe gegen das Ziel: mit
+    Spar-Tempo (netto der letzten 30 Tage) als „dafür sparst du etwa N Tage",
+    sonst als Anteil an dem, was noch fehlt. Bewusst **nicht** „verschiebt
+    dein Ziel um N Tage" — das wäre nur wahr, wenn das Geld sonst sicher im
+    Topf gelandet wäre.
+  - Nach dem Verwerfen eines Wunsches bietet die App an, den Betrag gleich
+    zurückzulegen.
+- **Keine Benachrichtigung**: ohne Server gibt es keinen Push. Dass ein Wunsch
+  reif ist, erfährt man erst beim Öffnen der App (Toast + Markierung).
+
 ## Mögliche nächste Schritte
 
 - Preis-Verlauf pro Artikel anzeigen (die Historie liegt schon da)
 - Einkauf einem Posten zuordnen („Haushaltsgeld") statt als freie Ausgabe
 - Posten pausieren statt löschen (für Verträge, die ruhen)
-- Sparziel mit Fortschritt
+
 - Auswertung über mehrere Monate

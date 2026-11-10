@@ -11,7 +11,7 @@ const MONATE = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
 const TAGE = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 const MAX_HISTORIE = 300;
 
-let state = { saldo: 0, posten: [], transaktionen: [], artikel: [], einkauf: [] };
+let state = { saldo: 0, posten: [], transaktionen: [], artikel: [], einkauf: [], wuensche: [], sparziel: null };
 
 // ---------------------------------------------------------------- Hilfsmittel
 
@@ -140,10 +140,12 @@ function normalisiere(roh) {
       .slice(0, MAX_HISTORIE)
       .map(t => ({
         id: String(t.id != null ? t.id : neueId()),
-        typ: t.typ === 'einzahlung' || t.typ === 'posten' ? t.typ : 'ausgabe',
+        typ: ['einzahlung', 'posten', 'sparen', 'entnahme'].includes(t.typ) ? t.typ : 'ausgabe',
         betrag: zahl(t.betrag),
         datum: String(t.datum || heuteISO()),
         name: String(t.name || ''),
+        ...(t.art === 'einkauf' || t.art === 'wunsch' ? { art: t.art } : {}),
+        ...(t.gewarnt === true ? { gewarnt: true } : {}),
       })) : [],
     artikel: Array.isArray(roh.artikel) ? roh.artikel
       .filter(a => a && typeof a === 'object')
@@ -151,6 +153,11 @@ function normalisiere(roh) {
     einkauf: Array.isArray(roh.einkauf) ? roh.einkauf
       .filter(z => z && typeof z === 'object')
       .map(einkaufPosNormalisieren) : [],
+    sparziel: sparzielNormalisieren(roh.sparziel),
+    wuensche: Array.isArray(roh.wuensche) ? roh.wuensche
+      .filter(w => w && typeof w === 'object' && Number.isFinite(w.betrag) && w.betrag > 0)
+      .slice(0, MAX_WUENSCHE)
+      .map(wunschNormalisieren) : [],
   };
 }
 
@@ -163,8 +170,14 @@ function speichere() {
   }
 }
 
-function transaktion(typ, betrag, name) {
-  state.transaktionen.unshift({ id: neueId(), typ, betrag, datum: heuteISO(), name: name || '' });
+/*
+  `extra` trägt bei Ausgaben zwei optionale Angaben für die Musteranzeige:
+    art: 'einkauf' | 'wunsch'   woher die Ausgabe kam (ohne = spontan erfasst)
+    gewarnt: true               sie wurde trotz Warnung gebucht
+*/
+function transaktion(typ, betrag, name, extra) {
+  state.transaktionen.unshift(Object.assign(
+    { id: neueId(), typ, betrag, datum: heuteISO(), name: name || '' }, extra || {}));
   if (state.transaktionen.length > MAX_HISTORIE) state.transaktionen.length = MAX_HISTORIE;
 }
 
@@ -284,6 +297,42 @@ function warnschwelle() {
 }
 
 /*
+  Tagesbudget
+  -----------
+  Die Drittel-Regel allein hat ein Loch: sind alle Posten des Monats bezahlt,
+  ist die Schwelle 0 und es wird gar nicht mehr gewarnt - ausgerechnet am
+  Monatsende, wenn es eng wird. Deshalb gibt es eine zweite Regel, die am
+  freien Geld hängt:
+
+      Tagesbudget = frei verfügbar / Tage bis Monatsende (heute zählt mit)
+
+  Gewarnt wird, wenn eine Ausgabe mehr als BUDGET_TAGE_WARNUNG Tagesbudgets
+  kostet, oder wenn sie mehr ist als das freie Geld überhaupt.
+*/
+const BUDGET_TAGE_WARNUNG = 3;
+
+function restTage() {
+  const jetzt = new Date();
+  return tageImMonat(jetzt.getFullYear(), jetzt.getMonth()) - jetzt.getDate() + 1;
+}
+
+function freiVerfuegbar() {
+  return state.saldo - summeOffen();
+}
+
+function tagesbudget() {
+  return Math.floor(Math.max(0, freiVerfuegbar()) / restTage());
+}
+
+// Ein Betrag in Tagen Budget: "3,1" oder ab zehn Tagen gerundet "12"
+function budgetTageText(betrag) {
+  const budget = tagesbudget();
+  if (!(budget > 0) || !(betrag > 0)) return null;
+  const tage = betrag / budget;
+  return tage >= 10 ? String(Math.round(tage)) : tage.toFixed(1).replace('.', ',');
+}
+
+/*
   Alles abziehen, was seit dem letzten Öffnen fällig geworden ist.
   Auch mehrere Termine pro Posten: wer die App zwei Monate nicht öffnet, bei
   dem ist das Geld trotzdem abgebucht worden. Jeder Abzug wird mit seinem
@@ -332,27 +381,296 @@ function pruefeAusgabe(betrag) {
   if (betrag > state.saldo) {
     return { ok: false, fehler: 'Dein Konto (' + eur(state.saldo) + ') reicht für ' + eur(betrag) + ' nicht aus.' };
   }
+  /*
+    Drei Gründe für eine Warnung. `gruende` nennt sie als Kürzel (für Tests
+    und die Oberfläche), `warnung` ist der fertige Text oder null.
+  */
+  const gruende = [];
+  const texte = [];
+  const frei = freiVerfuegbar();
+  const budget = tagesbudget();
+
+  if (betrag > Math.max(0, frei)) {
+    // Mehr als das freie Geld: der Rest ginge an reservierte Posten
+    gruende.push('reserviert');
+    texte.push(eur(betrag) + ' ist mehr, als du frei hast (' + eur(Math.max(0, frei)) +
+      '). Es fehlen dann ' + eur(betrag - frei) + ' für deine offenen Posten.');
+  } else if (budget > 0 && betrag > budget * BUDGET_TAGE_WARNUNG) {
+    gruende.push('budget');
+    texte.push(eur(betrag) + ' sind ' + budgetTageText(betrag) + ' Tage deines Budgets (' +
+      eur(budget) + ' pro Tag bis Monatsende).');
+  }
+
   // Termine zählen, nicht Posten - dieselbe Summe wie warnschwelle() und die
   // Startseite. Ein 14-Tage-Posten, der zweimal im Monat fällt, zählt zweimal.
   const termine = offeneTermine();
   const offen = summeOffen();
   if (offen > 0 && betrag > warnschwelle()) {
-    return {
-      ok: true,
-      warnung: eur(betrag) + ' ist mehr als ein Drittel deiner noch offenen Posten (' + eur(offen) +
-        ' in ' + termine.length + (termine.length === 1 ? ' Termin' : ' Terminen') + '). Das könnte deinen Sparplan kippen.',
-    };
+    gruende.push('drittel');
+    texte.push(eur(betrag) + ' ist mehr als ein Drittel deiner noch offenen Posten (' + eur(offen) +
+      ' in ' + termine.length + (termine.length === 1 ? ' Termin' : ' Terminen') + '). Das könnte deinen Sparplan kippen.');
   }
-  return { ok: true, warnung: null };
+  return { ok: true, warnung: texte.length ? texte.join(' ') : null, gruende };
 }
 
-function ausgeben(betrag, notiz) {
+function ausgeben(betrag, notiz, art) {
   const p = pruefeAusgabe(betrag);
   if (!p.ok) return p;
   state.saldo -= betrag;
-  transaktion('ausgabe', betrag, notiz);
+  const extra = {};
+  if (art === 'einkauf' || art === 'wunsch') extra.art = art;
+  if (p.warnung) extra.gewarnt = true;
+  transaktion('ausgabe', betrag, notiz, extra);
   speichere();
-  return { ok: true, warnung: p.warnung };
+  return { ok: true, warnung: p.warnung, gruende: p.gruende };
+}
+
+/*
+  Das eigene Muster: wie oft und wie viel ging diesen Monat spontan raus, und
+  wie oft trotz Warnung? Ein gebuchter Einkauf von der Liste zählt nicht als
+  spontan, ein nach der Abkühlzeit gekaufter Wunsch auch nicht - der war ja
+  gerade überlegt.
+*/
+function monatsMuster(monatsKey) {
+  const key = monatsKey || heute().monatsKey;
+  const imMonat = state.transaktionen.filter(t => t.typ === 'ausgabe' && String(t.datum).slice(0, 7) === key);
+  const spontan = imMonat.filter(t => !t.art);
+  const trotz = spontan.filter(t => t.gewarnt);
+  const verworfen = state.wuensche.filter(w => w.status === 'verworfen' && String(w.entschieden).slice(0, 7) === key);
+  return {
+    anzahl: spontan.length,
+    summe: summe(spontan),
+    trotzWarnung: trotz.length,
+    summeTrotz: summe(trotz),
+    verworfen: verworfen.length,
+    gespart: summe(verworfen),
+  };
+}
+
+/*
+  Wunschliste mit Abkühlzeit
+  --------------------------
+  Gegen Impulskäufe hilft vor allem Zeit zwischen Wunsch und Kauf. Ein Wunsch
+  wird geparkt und kann erst nach ABKUEHL_STUNDEN gekauft werden; verwerfen
+  geht jederzeit. Was verworfen wird, zählt als gespart.
+
+      { id, name, betrag, erstellt (Zeitstempel in ms),
+        status: 'offen' | 'gekauft' | 'verworfen', entschieden (ISO-Datum) }
+
+  Alle Funktionen nehmen optional `jetzt` (ms) entgegen, damit der Test die
+  Uhr vorstellen kann.
+*/
+const ABKUEHL_STUNDEN = 48;
+const MAX_WUENSCHE = 200;
+const STUNDE_MS = 3600000;
+
+function wunschNormalisieren(w) {
+  const status = w.status === 'gekauft' || w.status === 'verworfen' ? w.status : 'offen';
+  return {
+    id: String(w.id != null ? w.id : neueId()),
+    name: String(w.name || 'Wunsch'),
+    betrag: Math.round(w.betrag),
+    erstellt: Number.isFinite(w.erstellt) ? Math.round(w.erstellt) : Date.now(),
+    status,
+    entschieden: status === 'offen' ? null : String(w.entschieden || heuteISO()),
+  };
+}
+
+function wunschNachId(id) {
+  return state.wuensche.find(w => w.id === String(id)) || null;
+}
+
+function wunschSpeichern({ name, betrag }, jetzt) {
+  const sauber = String(name || '').trim();
+  if (!sauber) return { ok: false, fehler: 'Bitte eintragen, was du haben willst.' };
+  if (!Number.isFinite(betrag) || betrag <= 0) return { ok: false, fehler: 'Bitte einen Betrag größer als 0 eingeben.' };
+  const wunsch = wunschNormalisieren({
+    name: sauber, betrag, erstellt: Number.isFinite(jetzt) ? jetzt : Date.now(),
+  });
+  state.wuensche.unshift(wunsch);
+  // Alte, längst entschiedene Wünsche fallen hinten raus - offene nie
+  if (state.wuensche.length > MAX_WUENSCHE) {
+    const offen = state.wuensche.filter(w => w.status === 'offen');
+    const rest = state.wuensche.filter(w => w.status !== 'offen');
+    state.wuensche = offen.concat(rest).slice(0, Math.max(MAX_WUENSCHE, offen.length));
+  }
+  speichere();
+  return { ok: true, wunsch };
+}
+
+// Volle Stunden, bis der Wunsch gekauft werden darf (0 = Wartezeit vorbei)
+function wunschRestStunden(w, jetzt) {
+  const zeit = Number.isFinite(jetzt) ? jetzt : Date.now();
+  return Math.max(0, Math.ceil((w.erstellt + ABKUEHL_STUNDEN * STUNDE_MS - zeit) / STUNDE_MS));
+}
+
+function wunschReif(w, jetzt) {
+  return wunschRestStunden(w, jetzt) === 0;
+}
+
+// Offene Wünsche, die ältesten (also am ehesten reifen) zuerst
+function offeneWuensche() {
+  return state.wuensche.filter(w => w.status === 'offen').sort((a, b) => a.erstellt - b.erstellt);
+}
+
+function wunschVerwerfen(id) {
+  const w = wunschNachId(id);
+  if (!w || w.status !== 'offen') return { ok: false, fehler: 'Diesen Wunsch gibt es nicht mehr.' };
+  w.status = 'verworfen';
+  w.entschieden = heuteISO();
+  speichere();
+  return { ok: true, gespart: w.betrag };
+}
+
+/*
+  Kaufen bucht eine ganz normale Ausgabe über ausgeben() - mit derselben
+  Prüfung und denselben Warnungen. Vor Ablauf der Wartezeit geht es nicht.
+*/
+function wunschKaufen(id, jetzt) {
+  const w = wunschNachId(id);
+  if (!w || w.status !== 'offen') return { ok: false, fehler: 'Diesen Wunsch gibt es nicht mehr.' };
+  const rest = wunschRestStunden(w, jetzt);
+  if (rest > 0) {
+    return { ok: false, fehler: 'Noch ' + rest + (rest === 1 ? ' Stunde' : ' Stunden') + ' Abkühlzeit.' };
+  }
+  const r = ausgeben(w.betrag, w.name, 'wunsch');
+  if (!r.ok) return r;
+  w.status = 'gekauft';
+  w.entschieden = heuteISO();
+  speichere();
+  return { ok: true, betrag: w.betrag, warnung: r.warnung };
+}
+
+/*
+  Sparziel: ein eigener Topf
+  --------------------------
+  Zurückgelegtes Geld verlässt das Konto und damit „frei verfügbar" - es
+  sieht nicht mehr ausgebbar aus. Genau das ist der Zweck.
+
+      state.sparziel = { name, ziel, gespart } | null     (Beträge in Cent)
+
+  Bewegungen stehen als eigene Buchungsarten in der Historie: 'sparen'
+  (Konto -> Topf) und 'entnahme' (Topf -> Konto). Sie sind weder Ausgabe
+  noch Einzahlung und tauchen deshalb in keiner Monatszahl auf.
+*/
+function sparzielNormalisieren(z) {
+  if (!z || typeof z !== 'object' || !Number.isFinite(z.ziel) || z.ziel <= 0) return null;
+  return {
+    name: String(z.name || 'Sparziel'),
+    ziel: Math.round(z.ziel),
+    gespart: Number.isFinite(z.gespart) && z.gespart > 0 ? Math.round(z.gespart) : 0,
+  };
+}
+
+// Anlegen oder Name/Zielbetrag ändern - was schon im Topf liegt, bleibt
+function sparzielSetzen({ name, ziel }) {
+  const sauber = String(name || '').trim();
+  if (!sauber) return { ok: false, fehler: 'Bitte eintragen, wofür du sparst.' };
+  if (!Number.isFinite(ziel) || ziel <= 0) return { ok: false, fehler: 'Bitte einen Zielbetrag größer als 0 eingeben.' };
+  const neu = !state.sparziel;
+  state.sparziel = { name: sauber, ziel: Math.round(ziel), gespart: state.sparziel ? state.sparziel.gespart : 0 };
+  speichere();
+  return { ok: true, neu };
+}
+
+function sparzielStand() {
+  const z = state.sparziel;
+  if (!z) return null;
+  return {
+    name: z.name,
+    ziel: z.ziel,
+    gespart: z.gespart,
+    rest: Math.max(0, z.ziel - z.gespart),
+    anteil: Math.min(1, z.gespart / z.ziel),
+    erreicht: z.gespart >= z.ziel,
+  };
+}
+
+/*
+  Zurücklegen geht nur aus dem freien Geld. Mehr würde Geld in den Topf
+  schieben, das für offene Posten gebraucht wird - das Sparziel sähe gut aus
+  und der Strom platzt.
+*/
+function sparzielEinzahlen(betrag) {
+  if (!state.sparziel) return { ok: false, fehler: 'Lege zuerst ein Sparziel an.' };
+  if (!Number.isFinite(betrag) || betrag <= 0) return { ok: false, fehler: 'Bitte einen Betrag größer als 0 eingeben.' };
+  const frei = Math.max(0, freiVerfuegbar());
+  if (betrag > frei) {
+    return { ok: false, fehler: 'Du kannst höchstens ' + eur(frei) + ' zurücklegen – der Rest ist für offene Posten reserviert.' };
+  }
+  const vorher = state.sparziel.gespart >= state.sparziel.ziel;
+  state.saldo -= betrag;
+  state.sparziel.gespart += betrag;
+  transaktion('sparen', betrag, state.sparziel.name);
+  speichere();
+  return { ok: true, erreicht: !vorher && state.sparziel.gespart >= state.sparziel.ziel };
+}
+
+function sparzielEntnehmen(betrag) {
+  if (!state.sparziel) return { ok: false, fehler: 'Es gibt kein Sparziel.' };
+  if (!Number.isFinite(betrag) || betrag <= 0) return { ok: false, fehler: 'Bitte einen Betrag größer als 0 eingeben.' };
+  if (betrag > state.sparziel.gespart) {
+    return { ok: false, fehler: 'Im Topf liegen nur ' + eur(state.sparziel.gespart) + '.' };
+  }
+  state.sparziel.gespart -= betrag;
+  state.saldo += betrag;
+  transaktion('entnahme', betrag, state.sparziel.name);
+  speichere();
+  return { ok: true };
+}
+
+// Auflösen: was im Topf liegt, geht zurück aufs Konto - es verschwindet nie
+function sparzielAufloesen() {
+  if (!state.sparziel) return { ok: false, fehler: 'Es gibt kein Sparziel.' };
+  const zurueck = state.sparziel.gespart;
+  if (zurueck > 0) {
+    state.saldo += zurueck;
+    transaktion('entnahme', zurueck, state.sparziel.name);
+  }
+  state.sparziel = null;
+  speichere();
+  return { ok: true, zurueck };
+}
+
+// Was in den letzten 30 Tagen netto pro Tag in den Topf ging (Cent, nie negativ)
+function sparRateProTag() {
+  const d = new Date();
+  const ab = isoVon(new Date(d.getFullYear(), d.getMonth(), d.getDate() - 30));
+  const netto = state.transaktionen.reduce((s, t) => {
+    if (String(t.datum) < ab) return s;
+    return s + (t.typ === 'sparen' ? t.betrag : t.typ === 'entnahme' ? -t.betrag : 0);
+  }, 0);
+  return Math.max(0, netto) / 30;
+}
+
+/*
+  Eine Ausgabe gegen das Sparziel stellen. Mit Spar-Tempo: "so lange sparst
+  du dafür". Ohne (noch nichts zurückgelegt): als Anteil an dem, was fehlt.
+  Kein "verschiebt dein Ziel um ..." - das wäre nur wahr, wenn das Geld sonst
+  sicher im Topf gelandet wäre.
+*/
+function sparzielVergleich(betrag) {
+  const s = sparzielStand();
+  if (!s || s.erreicht || !Number.isFinite(betrag) || betrag <= 0) return null;
+  if (betrag >= s.rest) return 'Damit wäre „' + s.name + '“ auf einen Schlag erreicht.';
+  const rate = sparRateProTag();
+  const tage = rate > 0 ? Math.round(betrag / rate) : 0;
+  if (tage >= 1) {
+    return 'Dafür sparst du etwa ' + tage + (tage === 1 ? ' Tag' : ' Tage') + ' für „' + s.name + '“.';
+  }
+  const prozent = Math.round(betrag / s.rest * 100);
+  return prozent >= 1 ? 'Das sind ' + prozent + ' % von dem, was dir für „' + s.name + '“ noch fehlt.' : null;
+}
+
+// Was die Wunschliste bisher gebracht hat
+function wunschBilanz() {
+  const verworfen = state.wuensche.filter(w => w.status === 'verworfen');
+  return {
+    verworfen: verworfen.length,
+    gespart: summe(verworfen),
+    gekauft: state.wuensche.filter(w => w.status === 'gekauft').length,
+    offen: state.wuensche.filter(w => w.status === 'offen').length,
+  };
 }
 
 /*
@@ -439,7 +757,7 @@ function monatsBilanz(monatsKey) {
 }
 
 function zuruecksetzen() {
-  state = { saldo: 0, posten: [], transaktionen: [], artikel: [], einkauf: [] };
+  state = { saldo: 0, posten: [], transaktionen: [], artikel: [], einkauf: [], wuensche: [], sparziel: null };
   speichere();
 }
 
@@ -732,9 +1050,8 @@ function einkaufBudget() {
     ok: pruefung.ok,
     fehler: pruefung.fehler || null,
     warnung: pruefung.warnung || null,
-    hinweis: pruefung.ok && gesamt > basis.frei
-      ? 'Der Einkauf geht an deine reservierten Posten – es fehlen dann ' + eur(gesamt - basis.frei) + '.'
-      : null,
+    // „Geht an reservierte Posten“ steckt inzwischen in pruefeAusgabe() selbst
+    hinweis: null,
   };
 }
 
@@ -757,7 +1074,7 @@ function einkaufAbschliessen(echteSumme, laden) {
 
   const notiz = 'Einkauf' + (laden ? ' ' + String(laden).trim() : '') +
     ' · ' + state.einkauf.length + (state.einkauf.length === 1 ? ' Position' : ' Positionen');
-  const r = ausgeben(betrag, notiz);
+  const r = ausgeben(betrag, notiz, 'einkauf');
   if (!r.ok) return r;
 
   const urteile = [];
@@ -808,6 +1125,12 @@ if (typeof globalThis !== 'undefined') {
     vorratAendern, nachkaufen, preisUrteil, preisErfassen, artikelNachName,
     einkaufHinzu, einkaufAendern, einkaufEntfernen, einkaufLeeren,
     einkaufSumme, einkaufBudget, einkaufAbschliessen, einkaufAusVorrat,
+    BUDGET_TAGE_WARNUNG, ABKUEHL_STUNDEN,
+    restTage, freiVerfuegbar, tagesbudget, budgetTageText,
+    wunschSpeichern, wunschRestStunden, wunschReif, offeneWuensche,
+    wunschVerwerfen, wunschKaufen, wunschBilanz, monatsMuster,
+    sparzielSetzen, sparzielStand, sparzielEinzahlen, sparzielEntnehmen, sparzielAufloesen,
+    sparRateProTag, sparzielVergleich,
   };
 }
 
@@ -840,6 +1163,11 @@ if (istBrowser) {
     'seg-einkauf', 'einkauf-budget', 'einkauf-warnung', 'form-einkauf', 'ek-name', 'ek-scan', 'ek-vorschlaege',
     'ek-menge', 'ek-preis', 'ek-urteil', 'ek-aus-vorrat', 'einkauf-liste', 'einkauf-leer',
     'einkauf-summe', 'ek-echt', 'ek-laden', 'ek-buchen', 'ek-leeren', 'ek-fuss', 'ek-buchen-summe',
+    'tagesbudget', 'aus-budget', 'aus-parken', 'muster',
+    'wunsch-liste', 'wunsch-leer', 'wunsch-bilanz', 'form-wunsch', 'wun-name', 'wun-betrag',
+    'sparziel-karte', 'sparziel-leer', 'sparziel-aendern', 'sparziel-name', 'sparziel-stand',
+    'sparziel-balken', 'sparziel-rest', 'form-sparen', 'sp-betrag', 'sp-info', 'sp-entnehmen',
+    'form-sparziel', 'sz-name', 'sz-ziel', 'sz-aufloesen', 'aus-ziel',
     'vorrat-hinweis', 'form-artikel', 'art-id', 'art-name', 'art-ean', 'art-scan', 'art-einheit',
     'art-menge', 'art-mindest', 'art-submit', 'art-abbrechen', 'vorrat-liste', 'vorrat-leer',
     'scanner', 'scanner-video', 'scanner-status', 'scanner-manuell', 'scanner-ean', 'scanner-ok', 'scanner-zu',
@@ -986,6 +1314,97 @@ if (istBrowser) {
     knoten['monat-ein'].textContent = (b.einzahlungen > 0 ? '+' : '') + eur(b.einzahlungen);
     knoten['monat-aus'].textContent = eur(b.ausgaben);
     knoten['monat-posten'].textContent = eur(b.posten);
+
+    // Das eigene Muster in einem Satz - Zahlen, kein erhobener Zeigefinger
+    const m = monatsMuster();
+    const satz = [];
+    satz.push(m.anzahl
+      ? m.anzahl + (m.anzahl === 1 ? ' spontane Ausgabe' : ' spontane Ausgaben') + ' diesen Monat, zusammen ' + eur(m.summe) +
+        (m.trotzWarnung ? ', davon ' + m.trotzWarnung + ' trotz Warnung (' + eur(m.summeTrotz) + ')' : '')
+      : 'Diesen Monat noch keine spontane Ausgabe');
+    if (m.verworfen) {
+      satz.push(m.verworfen + (m.verworfen === 1 ? ' Wunsch' : ' Wünsche') + ' verworfen, ' + eur(m.gespart) + ' gespart');
+    }
+    knoten['muster'].textContent = satz.join('. ') + '.';
+
+    const tage = restTage();
+    knoten['tagesbudget'].textContent = b.frei > 0
+      ? 'Tagesbudget ' + eur(tagesbudget()) + ' · noch ' + tage + (tage === 1 ? ' Tag' : ' Tage') + ' bis Monatsende'
+      : '';
+  }
+
+  /*
+    Geparkte Wünsche. Solange die Abkühlzeit läuft, ist „Kaufen“ gesperrt und
+    zeigt die Reststunden; danach steht die Frage „Willst du das noch?“ da.
+    Verwerfen geht immer - das ist ja der erwünschte Ausgang.
+  */
+  function rendWuensche() {
+    const ul = knoten['wunsch-liste'];
+    ul.innerHTML = '';
+    const offen = offeneWuensche();
+    for (const w of offen) {
+      const rest = wunschRestStunden(w);
+      const reif = rest === 0;
+      const tage = budgetTageText(w.betrag);
+      const li = zeile(w.name, eur(w.betrag), null,
+        (reif ? 'Wartezeit vorbei – willst du das noch?'
+          : 'noch ' + rest + (rest === 1 ? ' Stunde' : ' Stunden') + ' Abkühlzeit') +
+        (tage ? ' · ' + tage + ' Tage Budget' : ''));
+      if (reif) li.classList.add('reif');
+
+      const aktionen = document.createElement('span');
+      aktionen.className = 'aktionen';
+
+      const weg = document.createElement('button');
+      weg.type = 'button';
+      weg.className = 'icon-knopf' + (reif ? ' haupt' : '');
+      weg.textContent = reif ? 'Brauch ich nicht' : 'Verwerfen';
+      weg.setAttribute('aria-label', 'Verwerfen – ' + w.name);
+      weg.addEventListener('click', async () => {
+        const r = wunschVerwerfen(w.id);
+        rendAlle();
+        if (!r.ok) return toast(r.fehler, 'warn');
+        /*
+          Der schönste Moment zum Sparen: gerade etwas nicht gekauft. Passt
+          der Betrag ins freie Geld, wird angeboten, ihn in den Topf zu legen.
+        */
+        const stand = sparzielStand();
+        if (stand && !stand.erreicht && r.gespart <= Math.max(0, freiVerfuegbar()) &&
+          await frage(eur(r.gespart) + ' nicht ausgegeben. Gleich für „' + stand.name + '“ zurücklegen?', 'Zurücklegen')) {
+          const s = sparzielEinzahlen(r.gespart);
+          rendAlle();
+          return toast(s.ok ? eur(r.gespart) + ' zurückgelegt.' : s.fehler, s.ok ? 'ok' : 'warn');
+        }
+        toast(eur(r.gespart) + ' gespart.', 'ok');
+      });
+
+      const kaufen = document.createElement('button');
+      kaufen.type = 'button';
+      kaufen.className = 'icon-knopf';
+      kaufen.textContent = reif ? 'Trotzdem kaufen' : 'Kaufen in ' + rest + ' Std.';
+      kaufen.disabled = !reif;
+      kaufen.setAttribute('aria-label', (reif ? 'Kaufen – ' : 'Kaufen noch gesperrt – ') + w.name);
+      kaufen.addEventListener('click', async () => {
+        const pruefung = pruefeAusgabe(w.betrag);
+        if (!pruefung.ok) return toast(pruefung.fehler, 'warn');
+        if (!await frage((pruefung.warnung ? pruefung.warnung + '\n\n' : '') +
+          '„' + w.name + '“ für ' + eur(w.betrag) + ' kaufen und als Ausgabe buchen?', 'Kaufen')) return;
+        const r = wunschKaufen(w.id);
+        rendAlle();
+        toast(r.ok ? eur(r.betrag) + ' ausgegeben.' : r.fehler, r.ok ? 'ok' : 'warn');
+      });
+
+      aktionen.append(kaufen, weg);
+      li.appendChild(aktionen);
+      ul.appendChild(li);
+    }
+    knoten['wunsch-leer'].hidden = offen.length > 0;
+
+    const bilanz = wunschBilanz();
+    knoten['wunsch-bilanz'].textContent = bilanz.verworfen
+      ? bilanz.verworfen + (bilanz.verworfen === 1 ? ' Wunsch' : ' Wünsche') + ' verworfen, ' +
+        eur(bilanz.gespart) + ' gespart' + (bilanz.gekauft ? ' · ' + bilanz.gekauft + ' gekauft' : '') + '.'
+      : '';
   }
 
   // Die nächsten noch nicht gebuchten Termine über alle Posten, auch über das Monatsende hinaus
@@ -1071,9 +1490,11 @@ if (istBrowser) {
         kopf.textContent = tagLabel(t.datum);
         ul.appendChild(kopf);
       }
-      const art = t.typ === 'posten' ? 'Posten' : t.typ === 'einzahlung' ? 'Einzahlung' : 'Ausgabe';
-      const plus = t.typ === 'einzahlung';
-      ul.appendChild(zeile(t.name || art, (plus ? '+' : '−') + eur(t.betrag), plus ? 'plus' : 'minus', art));
+      const art = { posten: 'Posten', einzahlung: 'Einzahlung', sparen: 'in den Spartopf', entnahme: 'aus dem Spartopf' }[t.typ] || 'Ausgabe';
+      const plus = t.typ === 'einzahlung' || t.typ === 'entnahme';
+      const herkunft = t.art === 'einkauf' ? 'Einkauf' : t.art === 'wunsch' ? 'geparkter Wunsch' : art;
+      ul.appendChild(zeile(t.name || art, (plus ? '+' : '−') + eur(t.betrag), plus ? 'plus' : 'minus',
+        herkunft + (t.gewarnt ? ' · trotz Warnung' : '')));
     }
   }
 
@@ -1254,13 +1675,63 @@ if (istBrowser) {
     const meldung = pruefung ? (pruefung.fehler || pruefung.warnung || '') : '';
     knoten['ausgabe-warnung'].textContent = meldung;
     knoten['ausgabe-warnung'].hidden = !meldung;
-    knoten['aus-submit'].textContent = pruefung && pruefung.ok && pruefung.warnung
-      ? 'Trotzdem ausgeben' : 'Ausgeben';
 
-    const s = warnschwelle();
-    knoten['ausgabe-schwelle'].textContent = s > 0
-      ? 'Ab ' + eur(s + 1) + ' bekommst du eine Warnung (ein Drittel der offenen Posten).'
-      : 'Aktuell keine offenen Posten – es wird nicht gewarnt.';
+    // Den Betrag greifbar machen: wie viele Tage Budget sind das?
+    const budget = tagesbudget();
+    const tage = gueltig ? budgetTageText(betrag) : null;
+    knoten['aus-budget'].textContent = budget > 0
+      ? 'Tagesbudget ' + eur(budget) + (tage ? ' · diese Ausgabe = ' + tage + ' Tage' : '')
+      : 'Du hast gerade nichts frei.';
+
+    // ... und gegen das Sparziel stellen
+    knoten['aus-ziel'].textContent = (gueltig && sparzielVergleich(betrag)) || '';
+
+    bremseSetzen(!!pruefung && pruefung.ok && !!pruefung.warnung);
+
+    // Ab wann gewarnt wird: die kleinere der beiden Schwellen zählt
+    const drittel = warnschwelle();
+    const grenzen = [];
+    if (budget > 0) grenzen.push(budget * BUDGET_TAGE_WARNUNG);
+    if (drittel > 0) grenzen.push(drittel);
+    knoten['ausgabe-schwelle'].textContent = grenzen.length
+      ? 'Gewarnt wird ab ' + eur(Math.min(...grenzen) + 1) + ': mehr als ' + BUDGET_TAGE_WARNUNG +
+        ' Tage Budget oder mehr als ein Drittel der offenen Posten.'
+      : 'Gewarnt wird bei jeder Ausgabe, solange nichts frei ist.';
+  }
+
+  /*
+    Bremse: bei einer Warnung ist „Trotzdem ausgeben“ erst nach ein paar
+    Sekunden drückbar. Reibung ist hier gewollt - ein Impulskauf lebt davon,
+    dass er schnell geht. Die Uhr läuft ab der ersten Warnung und startet
+    nicht neu, wenn man am Betrag weitertippt.
+  */
+  const BREMSE_SEKUNDEN = 10;
+  let bremseBis = 0;
+  let bremseTakt = null;
+
+  function bremseAnzeigen() {
+    const rest = Math.ceil((bremseBis - Date.now()) / 1000);
+    const knopf = knoten['aus-submit'];
+    if (bremseBis && rest > 0) {
+      knopf.disabled = true;
+      knopf.textContent = 'Trotzdem ausgeben in ' + rest + ' …';
+      return;
+    }
+    clearInterval(bremseTakt);
+    bremseTakt = null;
+    knopf.disabled = false;
+    knopf.textContent = bremseBis ? 'Trotzdem ausgeben' : 'Ausgeben';
+  }
+
+  function bremseSetzen(warnt) {
+    if (!warnt) {
+      bremseBis = 0;
+    } else if (!bremseBis) {
+      bremseBis = Date.now() + BREMSE_SEKUNDEN * 1000;
+      clearInterval(bremseTakt);
+      bremseTakt = setInterval(bremseAnzeigen, 250);
+    }
+    bremseAnzeigen();
   }
 
   function rendEinzahlungLive() {
@@ -1282,6 +1753,9 @@ if (istBrowser) {
     rendAusgabeLive();
     rendEinzahlungLive();
     rendEinkaufSegment();
+    rendWuensche();
+    rendSparziel();
+    rendSparenLive();
     rendEinheiten();
     rendEinkauf();
     rendVorrat();
@@ -1803,6 +2277,9 @@ if (istBrowser) {
   const OVERLAY_TITEL = {
     einzahlung: 'Einzahlen',
     ausgabe: 'Ausgabe',
+    wunsch: 'Wunsch parken',
+    sparen: 'Spartopf',
+    sparziel: 'Sparziel',
     posten: 'Neuer Posten',
     vorrat: 'Neuer Artikel',
     einstellungen: 'Einstellungen',
@@ -1818,6 +2295,8 @@ if (istBrowser) {
     document.body.classList.add('fixiert');
     if (name === 'ausgabe') rendAusgabeLive();
     if (name === 'einzahlung') rendEinzahlungLive();
+    if (name === 'sparen') rendSparenLive();
+    if (name === 'sparziel') sparzielFormularFuellen();
     const ersterInput = overlay.querySelector('.overlay-body:not([hidden]) input:not([type="hidden"]):not([type="file"])');
     if (ersterInput) setTimeout(() => ersterInput.focus(), 50);
   }
@@ -1831,6 +2310,9 @@ if (istBrowser) {
     // Beim nächsten Öffnen soll kein halb getippter Betrag mehr dastehen
     knoten['form-einzahlung'].reset();
     knoten['form-ausgabe'].reset();
+    knoten['form-wunsch'].reset();
+    knoten['form-sparen'].reset();
+    knoten['form-sparziel'].reset();
     postenFormularLeeren();
     artikelFormularLeeren();
     rendAusgabeLive();
@@ -1985,11 +2467,123 @@ if (istBrowser) {
       knoten['aus-betrag'].focus();
       return;
     }
+    // Die Bremse gilt auch für die Enter-Taste, nicht nur für den Knopf
+    if (pruefung.warnung && (!bremseBis || Date.now() < bremseBis)) {
+      rendAusgabeLive();
+      return;
+    }
     const r = ausgeben(betrag, notiz);
     if (!r.ok) return toast(r.fehler, 'warn');
     rendAlle();
     overlaySchliessen();
     toast(eur(betrag) + ' ausgegeben.', 'ok');
+  });
+
+  // Aus dem Ausgabe-Blatt heraus parken statt kaufen: Betrag und Zweck wandern mit
+  knoten['aus-parken'].addEventListener('click', () => {
+    const name = knoten['aus-notiz'].value.trim();
+    if (!name) {
+      toast('Wofür? Trag kurz ein, was du kaufen willst.', 'warn');
+      knoten['aus-notiz'].focus();
+      return;
+    }
+    const r = wunschSpeichern({ name, betrag: zuCent(knoten['aus-betrag'].value) });
+    if (!r.ok) return toast(r.fehler, 'warn');
+    rendAlle();
+    overlaySchliessen();
+    toast('Geparkt. In ' + ABKUEHL_STUNDEN + ' Stunden entscheidest du.', 'ok');
+  });
+
+  // ---------------------------------------------------------------- Sparziel
+
+  function rendSparziel() {
+    const s = sparzielStand();
+    knoten['sparziel-karte'].hidden = !s;
+    knoten['sparziel-leer'].hidden = !!s;
+    knoten['sparziel-aendern'].hidden = !s;
+    if (!s) return;
+    knoten['sparziel-name'].textContent = s.name;
+    knoten['sparziel-stand'].textContent = eur(s.gespart) + ' von ' + eur(s.ziel);
+    balkenSetzen(knoten['sparziel-balken'], [['frei', s.gespart], ['reserviert', s.rest]]);
+    const prozent = Math.floor(s.anteil * 100);
+    knoten['sparziel-rest'].textContent = s.erreicht
+      ? 'Ziel erreicht.'
+      : prozent + ' % geschafft · es fehlen noch ' + eur(s.rest);
+  }
+
+  function rendSparenLive() {
+    const s = sparzielStand();
+    knoten['sp-info'].textContent = 'Frei verfügbar ' + eur(Math.max(0, freiVerfuegbar())) +
+      ' · im Topf ' + eur(s ? s.gespart : 0);
+    knoten['sp-entnehmen'].hidden = !s || s.gespart <= 0;
+  }
+
+  function sparzielFormularFuellen() {
+    const s = sparzielStand();
+    knoten['overlay-titel'].textContent = s ? 'Sparziel ändern' : 'Sparziel anlegen';
+    knoten['sz-name'].value = s ? s.name : '';
+    knoten['sz-ziel'].value = s ? (s.ziel / 100).toFixed(2).replace('.', ',') : '';
+    knoten['sz-aufloesen'].hidden = !s;
+  }
+
+  knoten['form-sparziel'].addEventListener('submit', e => {
+    e.preventDefault();
+    const r = sparzielSetzen({ name: knoten['sz-name'].value, ziel: zuCent(knoten['sz-ziel'].value) });
+    if (!r.ok) return toast(r.fehler, 'warn');
+    rendAlle();
+    overlaySchliessen();
+    toast(r.neu ? 'Sparziel angelegt.' : 'Sparziel geändert.', 'ok');
+  });
+
+  knoten['sz-aufloesen'].addEventListener('click', async () => {
+    const s = sparzielStand();
+    if (!s) return;
+    if (!await frage('Sparziel „' + s.name + '“ auflösen?' +
+      (s.gespart > 0 ? ' ' + eur(s.gespart) + ' aus dem Topf gehen zurück aufs Konto.' : ''), 'Auflösen')) return;
+    const r = sparzielAufloesen();
+    rendAlle();
+    overlaySchliessen();
+    toast(r.ok ? 'Sparziel aufgelöst.' : r.fehler, r.ok ? null : 'warn');
+  });
+
+  knoten['form-sparen'].addEventListener('submit', e => {
+    e.preventDefault();
+    const betrag = zuCent(knoten['sp-betrag'].value);
+    const r = sparzielEinzahlen(betrag);
+    if (!r.ok) return toast(r.fehler, 'warn');
+    rendAlle();
+    overlaySchliessen();
+    toast(r.erreicht ? 'Ziel erreicht – ' + eur(betrag) + ' zurückgelegt.' : eur(betrag) + ' zurückgelegt.', 'ok');
+  });
+
+  // Aus dem Topf nehmen ist der Weg zurück zum Ausgeben - deshalb mit Rückfrage
+  knoten['sp-entnehmen'].addEventListener('click', async () => {
+    const betrag = zuCent(knoten['sp-betrag'].value);
+    const s = sparzielStand();
+    if (!(betrag > 0)) {
+      toast('Bitte einen Betrag größer als 0 eingeben.', 'warn');
+      return knoten['sp-betrag'].focus();
+    }
+    if (s && betrag > s.gespart) return toast('Im Topf liegen nur ' + eur(s.gespart) + '.', 'warn');
+    if (!await frage(eur(betrag) + ' aus dem Topf „' + (s ? s.name : '') + '“ nehmen? Danach fehlen wieder ' +
+      eur(s ? Math.max(0, s.ziel - s.gespart + betrag) : 0) + ' bis zum Ziel.', 'Herausnehmen')) return;
+    const r = sparzielEntnehmen(betrag);
+    if (!r.ok) return toast(r.fehler, 'warn');
+    rendAlle();
+    overlaySchliessen();
+    toast(eur(betrag) + ' zurück aufs Konto.');
+  });
+
+  knoten['form-wunsch'].addEventListener('submit', e => {
+    e.preventDefault();
+    const r = wunschSpeichern({
+      name: knoten['wun-name'].value,
+      betrag: zuCent(knoten['wun-betrag'].value),
+    });
+    if (!r.ok) return toast(r.fehler, 'warn');
+    rendAlle();
+    overlaySchliessen();
+    toast('Geparkt. In ' + ABKUEHL_STUNDEN + ' Stunden entscheidest du.', 'ok');
   });
 
   /*
@@ -2132,9 +2726,34 @@ if (istBrowser) {
   lade();
   const abgezogen = abrechnen();
   rendAlle();
-  if (abgezogen) {
-    toast(abgezogen + (abgezogen === 1 ? ' fälliger Posten' : ' fällige Posten') + ' abgezogen.');
+
+  // Was seit dem letzten Blick passiert ist: abgezogene Posten, reife Wünsche
+  function startMeldung(gebucht) {
+    const reif = offeneWuensche().filter(w => wunschReif(w)).length;
+    const teile = [];
+    if (gebucht) teile.push(gebucht + (gebucht === 1 ? ' fälliger Posten' : ' fällige Posten') + ' abgezogen');
+    if (reif) teile.push(reif + (reif === 1 ? ' Wunsch wartet' : ' Wünsche warten') + ' auf deine Entscheidung');
+    if (teile.length) toast(teile.join(' · ') + '.');
   }
+  startMeldung(abgezogen);
+
+  /*
+    Eine installierte App wird selten neu geladen, sie kommt nur wieder nach
+    vorn. Dann neu abrechnen und zeichnen - sonst stehen die Reststunden der
+    Wünsche und fällige Posten auf dem Stand von gestern.
+  */
+  let letzterTag = heuteISO();
+  let reifBisher = offeneWuensche().filter(w => wunschReif(w)).length;
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    const gebucht = heuteISO() !== letzterTag ? abrechnen() : 0;
+    letzterTag = heuteISO();
+    // Ein offenes Blatt nicht unter den Fingern neu zeichnen
+    if (knoten['overlay'].hidden) rendAlle();
+    const reif = offeneWuensche().filter(w => wunschReif(w)).length;
+    if (gebucht || reif > reifBisher) startMeldung(gebucht);
+    reifBisher = reif;
+  });
 
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     navigator.serviceWorker.register('sw.js').catch(() => {});

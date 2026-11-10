@@ -1337,3 +1337,80 @@ select:focus-visible,
   .monat-grid { grid-template-columns: 1fr 1fr; }
   .kleb-fuss { margin-left: -1rem; margin-right: -1rem; padding-left: 1rem; padding-right: 1rem; }
 }
+
+/* ------------------------------------------- Tagesbudget, Wuensche, Bremse */
+
+.held-budget {
+  color: var(--leise);
+  font-size: 0.82rem;
+  margin-top: -0.45rem;
+}
+
+.held-budget strong {
+  color: var(--text);
+  font-weight: 500;
+}
+
+/* Dritter Knopf unter Ausgabe/Einzahlen ueber die ganze Breite */
+.aktionen-gross .knopf.breit {
+  grid-column: 1 / -1;
+  color: var(--akzent-text);
+}
+
+/* Gesperrter Knopf: waehrend der Bremse und vor Ablauf der Abkuehlzeit */
+.knopf:disabled,
+.icon-knopf:disabled {
+  opacity: 0.5;
+  cursor: default;
+  transform: none;
+}
+
+#wunsch-liste li {
+  flex-wrap: wrap;
+}
+
+#wunsch-liste .aktionen {
+  flex-basis: 100%;
+  justify-content: flex-end;
+}
+
+/* Wartezeit vorbei: die Entscheidung steht an */
+#wunsch-liste li.reif .z-unter {
+  color: var(--akzent-text);
+  font-weight: 600;
+}
+
+.icon-knopf.haupt {
+  background: var(--akzent);
+  border-color: transparent;
+  color: var(--auf-akzent);
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------- Sparziel */
+
+.card.sparziel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.9rem 1rem 1rem;
+}
+
+.card.sparziel .leer {
+  padding: 0;
+}
+
+.card.sparziel .budget-kopf span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card.sparziel .knopf {
+  margin-top: 0.3rem;
+}
+
+.budget-fuss:empty {
+  display: none;
+}

@@ -46,6 +46,7 @@
           <span>Konto <strong id="saldo">0,00&nbsp;&euro;</strong></span>
           <span id="saldo-hinweis"></span>
         </div>
+        <p class="held-budget" id="tagesbudget"></p>
         <p class="warnung" id="monat-frei-hinweis" hidden></p>
       </div>
 
@@ -58,7 +59,46 @@
           <svg aria-hidden="true" viewBox="0 0 24 24" class="dick"><path d="M12 5v14M5 12h14"/></svg>
           Einzahlen
         </button>
+        <button class="knopf breit" type="button" data-oeffnet="wunsch">
+          <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+          Will ich haben &ndash; erst parken
+        </button>
       </div>
+
+      <!-- Sparziel: eigener Topf, das Geld darin ist nicht mehr "frei verfuegbar" -->
+      <section class="block" aria-labelledby="sparziel-titel">
+        <div class="block-kopf">
+          <h2 id="sparziel-titel">Sparziel</h2>
+          <button class="text-knopf" type="button" data-oeffnet="sparziel" id="sparziel-aendern">&Auml;ndern</button>
+        </div>
+        <div class="card sparziel" id="sparziel-karte" hidden>
+          <div class="budget-kopf">
+            <span id="sparziel-name"></span>
+            <strong id="sparziel-stand"></strong>
+          </div>
+          <div class="balken" id="sparziel-balken" aria-hidden="true"></div>
+          <span class="budget-fuss" id="sparziel-rest"></span>
+          <button class="knopf" type="button" data-oeffnet="sparen">
+            <svg aria-hidden="true" viewBox="0 0 24 24" class="dick"><path d="M12 5v14M5 12h14"/></svg>
+            Zur&uuml;cklegen
+          </button>
+        </div>
+        <div class="card sparziel" id="sparziel-leer" hidden>
+          <p class="leer">Noch kein Sparziel. Was du zur&uuml;cklegst, verschwindet aus &bdquo;frei verf&uuml;gbar&ldquo; und w&auml;chst auf dein Ziel zu.</p>
+          <button class="knopf" type="button" data-oeffnet="sparziel">Sparziel anlegen</button>
+        </div>
+      </section>
+
+      <section class="block" aria-labelledby="wunsch-titel">
+        <div class="block-kopf">
+          <h2 id="wunsch-titel">Geparkte W&uuml;nsche</h2>
+        </div>
+        <div class="card">
+          <ul id="wunsch-liste" class="liste"></ul>
+          <p class="leer" id="wunsch-leer" hidden>Nichts geparkt. Wenn dich etwas reizt: erst parken, in 48&nbsp;Stunden entscheiden.</p>
+        </div>
+        <p class="fussnote oben" id="wunsch-bilanz"></p>
+      </section>
 
       <div class="card monat-grid" aria-label="Dieser Monat">
         <div class="monat-zelle">
@@ -74,6 +114,7 @@
           <span class="monat-wert" id="monat-posten">0,00&nbsp;&euro;</span>
         </div>
       </div>
+      <p class="fussnote oben" id="muster"></p>
 
       <section class="block">
         <div class="block-kopf">
@@ -304,13 +345,51 @@
             <div class="balken-legende" aria-hidden="true">
               <span>frei</span><span>diese Ausgabe</span><span>reserviert</span>
             </div>
+            <span class="budget-fuss" id="aus-budget"></span>
+            <span class="budget-fuss" id="aus-ziel"></span>
           </div>
           <div id="ausgabe-warnung" class="warnung" role="status" hidden></div>
-          <label for="aus-notiz">Notiz (optional)</label>
+          <label for="aus-notiz">Wof&uuml;r? (optional)</label>
           <input type="text" id="aus-notiz" autocomplete="off" placeholder="z.&nbsp;B. Schuhe">
           <button type="submit" class="knopf haupt" id="aus-submit">Ausgeben</button>
+          <button type="button" class="knopf" id="aus-parken">Erst parken &ndash; in 48&nbsp;Stunden entscheiden</button>
         </form>
         <p class="fussnote" id="ausgabe-schwelle"></p>
+      </div>
+
+      <!-- Wunsch parken: erst nach der Abkuehlzeit kaufbar -->
+      <div class="overlay-body" data-body="wunsch" hidden>
+        <form id="form-wunsch" novalidate>
+          <label for="wun-betrag" class="betrag-label">Was kostet es?</label>
+          <input class="betrag-gross" type="text" inputmode="decimal" id="wun-betrag" placeholder="0,00" autocomplete="off" required>
+          <label for="wun-name">Was willst du haben?</label>
+          <input type="text" id="wun-name" autocomplete="off" placeholder="z.&nbsp;B. Kopfh&ouml;rer" required>
+          <p class="fussnote oben">Der Wunsch wird 48&nbsp;Stunden geparkt. Danach fragt dich die App, ob du ihn noch willst. Verwerfen geht jederzeit.</p>
+          <button type="submit" class="knopf haupt">Parken</button>
+        </form>
+      </div>
+
+      <!-- Geld in den Spartopf legen oder herausnehmen -->
+      <div class="overlay-body" data-body="sparen" hidden>
+        <form id="form-sparen" novalidate>
+          <label for="sp-betrag" class="betrag-label">Betrag in Euro</label>
+          <input class="betrag-gross" type="text" inputmode="decimal" id="sp-betrag" placeholder="0,00" autocomplete="off" required>
+          <p class="betrag-folge" id="sp-info"></p>
+          <button type="submit" class="knopf haupt">Zur&uuml;cklegen</button>
+          <button type="button" class="knopf gefahr" id="sp-entnehmen">Aus dem Topf nehmen</button>
+        </form>
+      </div>
+
+      <!-- Sparziel anlegen / aendern / aufloesen -->
+      <div class="overlay-body" data-body="sparziel" hidden>
+        <form id="form-sparziel" novalidate>
+          <label for="sz-name">Wof&uuml;r sparst du?</label>
+          <input type="text" id="sz-name" autocomplete="off" placeholder="z.&nbsp;B. Urlaub" required>
+          <label for="sz-ziel">Zielbetrag</label>
+          <input type="text" inputmode="decimal" id="sz-ziel" placeholder="0,00" autocomplete="off" required>
+          <button type="submit" class="knopf haupt">Speichern</button>
+          <button type="button" class="knopf gefahr" id="sz-aufloesen" hidden>Sparziel aufl&ouml;sen</button>
+        </form>
       </div>
 
       <!-- Posten anlegen / aendern -->

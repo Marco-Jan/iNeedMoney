@@ -79,8 +79,9 @@ assert(!L.postenSpeichern({ name: 'X', betrag: -5, tag: 5 }).ok, 'negativer Betr
 block('Warnschwelle (ein Drittel der offenen Posten)');
 assert(L.offenePosten().length === 1, 'ein offener Posten');
 assert(L.warnschwelle() === 1866, 'Schwelle = floor(5600/3) = 1866 Cent');
-assert(L.pruefeAusgabe(1866).warnung === null, '18,66 EUR -> keine Warnung (genau Schwelle)');
-assert(typeof L.pruefeAusgabe(1867).warnung === 'string', '18,67 EUR -> Warnung');
+assert(!L.pruefeAusgabe(1866).gruende.includes('drittel'), '18,66 EUR -> keine Drittel-Warnung (genau Schwelle)');
+assert(L.pruefeAusgabe(1867).gruende.includes('drittel') && typeof L.pruefeAusgabe(1867).warnung === 'string',
+  '18,67 EUR -> Drittel-Warnung');
 assert(!L.pruefeAusgabe(99999).ok, 'mehr als der Saldo -> Fehler, keine Buchung');
 assert(L.state.saldo === 10000, 'pruefeAusgabe bucht nichts');
 
@@ -89,7 +90,7 @@ const a1 = L.ausgeben(2000, 'Kaffee');
 assert(a1.ok && typeof a1.warnung === 'string', '20,00 EUR gebucht, mit Warnung');
 assert(L.state.saldo === 8000, 'Saldo = 8000 Cent');
 const a2 = L.ausgeben(1000);
-assert(a2.ok && a2.warnung === null, '10,00 EUR gebucht, ohne Warnung');
+assert(a2.ok && !a2.gruende.includes('drittel'), '10,00 EUR gebucht, ohne Drittel-Warnung');
 assert(L.state.saldo === 7000, 'Saldo = 7000 Cent');
 assert(!L.ausgeben(0).ok && L.state.saldo === 7000, 'Ausgabe 0 wird abgelehnt');
 
@@ -103,7 +104,7 @@ assert(!L.postenSpeichern({ id: 'gibtsnicht', name: 'X', betrag: 100, tag: 3 }).
 assert(L.postenLoeschen(strom.id).ok, 'Posten geloescht');
 assert(L.state.posten.length === 0, 'keine Posten mehr');
 assert(L.warnschwelle() === 0, 'ohne offene Posten ist die Schwelle 0');
-assert(L.pruefeAusgabe(5000).warnung === null, 'ohne offene Posten keine Warnung');
+assert(!L.pruefeAusgabe(5000).gruende.includes('drittel'), 'ohne offene Posten keine Drittel-Warnung');
 
 block('Faellige Posten werden genau einmal pro Monat abgezogen');
 L.zuruecksetzen();
@@ -237,8 +238,8 @@ L.postenSpeichern({ name: 'Woechentlich', betrag: 3000, rhythmus: 'woche', inter
 const schwelleJetzt = L.warnschwelle();
 if (schwelleJetzt > 0) {
   assert(schwelleJetzt === Math.floor(L.offeneTermine().length * 3000 / 3), 'die Schwelle zaehlt jeden offenen Termin');
-  assert(L.pruefeAusgabe(schwelleJetzt).warnung === null, 'genau auf der Schwelle: keine Warnung');
-  assert(typeof L.pruefeAusgabe(schwelleJetzt + 1).warnung === 'string', 'ein Cent darueber: Warnung');
+  assert(!L.pruefeAusgabe(schwelleJetzt).gruende.includes('drittel'), 'genau auf der Schwelle: keine Drittel-Warnung');
+  assert(L.pruefeAusgabe(schwelleJetzt + 1).gruende.includes('drittel'), 'ein Cent darueber: Drittel-Warnung');
   assert(L.pruefeAusgabe(schwelleJetzt + 1).warnung.includes(L.eur(L.summeOffen())),
     'die Warnung nennt dieselbe offene Summe wie die Startseite');
 } else {
@@ -637,6 +638,226 @@ assert(L.state.artikel.length === 1, 'es entsteht kein stiller Doppel-Artikel');
 assert(L.artikelNachName('JOGHURT').id === getippt.id, 'Namenssuche ignoriert Gross-/Kleinschreibung');
 assert(L.artikelNachName('Jogh') === null, 'Namenssuche ist exakt, nicht unscharf');
 L.einkaufLeeren();
+
+block('Tagesbudget: die zweite Warnregel');
+L.zuruecksetzen();
+L.einzahlen(310000, 'Start');
+// Ohne offene Posten greift die Drittel-Regel nie - frueher hiess das: gar keine Warnung.
+assert(L.warnschwelle() === 0, 'keine offenen Posten: die Drittel-Schwelle ist 0');
+assert(L.freiVerfuegbar() === 310000, 'frei verfuegbar = Konto, wenn nichts offen ist');
+const tageRest = L.restTage();
+assert(tageRest >= 1 && tageRest <= 31, 'Resttage zaehlen heute mit (' + tageRest + ')');
+assert(L.tagesbudget() === Math.floor(310000 / tageRest), 'Tagesbudget = frei / Resttage, abgerundet');
+const grenzeBudget = L.tagesbudget() * L.BUDGET_TAGE_WARNUNG;
+if (grenzeBudget < 310000) {
+  assert(L.pruefeAusgabe(grenzeBudget).warnung === null, 'genau ' + L.BUDGET_TAGE_WARNUNG + ' Tage Budget: keine Warnung');
+  const drueber = L.pruefeAusgabe(grenzeBudget + 1);
+  assert(drueber.ok && drueber.gruende.join() === 'budget', 'ein Cent darueber: Warnung wegen Budget, auch ohne offene Posten');
+  assert(/Tage deines Budgets/.test(drueber.warnung), 'die Warnung nennt die Tage');
+} else {
+  assert(true, 'letzter Tag des Monats: drei Tagesbudgets sind mehr als das Konto, uebersprungen');
+}
+assert(L.budgetTageText(L.tagesbudget() * 2) === '2,0', 'zwei Tagesbudgets sind "2,0" Tage');
+assert(L.budgetTageText(L.tagesbudget() * 12) === '12', 'ab zehn Tagen ohne Nachkommastelle');
+
+block('Tagesbudget: mehr als das freie Geld');
+L.zuruecksetzen();
+L.einzahlen(100000, 'Start');
+const tagFrei = Math.min(28, new Date().getDate() + 1);
+if (tagFrei > new Date().getDate()) {
+  L.postenSpeichern({ name: 'Miete', betrag: 90000, tag: tagFrei });
+  assert(L.freiVerfuegbar() === 10000, 'frei = 1000 - 900 = 100 Euro');
+  const zuTief = L.pruefeAusgabe(15000);
+  assert(zuTief.ok, '150 Euro sind buchbar - das Konto reicht ja');
+  assert(zuTief.gruende.includes('reserviert') && !zuTief.gruende.includes('budget'),
+    'aber es wird gewarnt: das geht an reservierte Posten');
+  assert(zuTief.warnung.includes(L.eur(5000)), 'die Warnung nennt, wie viel dann fehlt');
+  assert(L.einkaufBudget().hinweis !== undefined, 'das Einkaufs-Budget laeuft ueber dieselbe Pruefung');
+  L.state.saldo = 50000;
+  assert(L.tagesbudget() === 0, 'ist nichts frei, ist das Tagesbudget 0 und nie negativ');
+  assert(L.pruefeAusgabe(100).gruende.includes('reserviert'), 'dann warnt schon ein Euro');
+} else {
+  assert(true, 'heute ist Monatsende: nicht pruefbar, uebersprungen');
+}
+
+block('Wunschliste: parken, abkuehlen, entscheiden');
+L.zuruecksetzen();
+L.einzahlen(500000, 'Start');
+const t0w = Date.UTC(2026, 5, 10, 12, 0, 0);
+const STD = 3600000;
+assert(!L.wunschSpeichern({ name: '  ', betrag: 5000 }).ok, 'Wunsch ohne Namen wird abgelehnt');
+assert(!L.wunschSpeichern({ name: 'X', betrag: 0 }).ok, 'Wunsch ohne Betrag wird abgelehnt');
+const wu = L.wunschSpeichern({ name: 'Kopfhoerer', betrag: 12900 }, t0w);
+assert(wu.ok && L.state.wuensche.length === 1, 'Wunsch geparkt');
+assert(L.state.saldo === 500000, 'parken bucht nichts');
+assert(gespeichert().wuensche.length === 1, 'der Wunsch ist persistiert');
+assert(L.wunschRestStunden(wu.wunsch, t0w) === L.ABKUEHL_STUNDEN, 'direkt nach dem Parken: volle Abkuehlzeit');
+assert(L.wunschRestStunden(wu.wunsch, t0w + 30 * 60000) === L.ABKUEHL_STUNDEN, 'angefangene Stunden zaehlen voll');
+assert(L.wunschRestStunden(wu.wunsch, t0w + 47 * STD + 1) === 1, 'kurz vor Ablauf: noch 1 Stunde');
+assert(!L.wunschReif(wu.wunsch, t0w + 47 * STD), 'nach 47 Stunden noch nicht reif');
+assert(L.wunschReif(wu.wunsch, t0w + 48 * STD), 'nach 48 Stunden reif');
+const zuFrueh = L.wunschKaufen(wu.wunsch.id, t0w + 10 * STD);
+assert(!zuFrueh.ok && /38 Stunden/.test(zuFrueh.fehler), 'vor Ablauf laesst sich der Wunsch nicht kaufen');
+assert(L.state.saldo === 500000 && wu.wunsch.status === 'offen', 'der gescheiterte Kauf hat nichts veraendert');
+const gekauft = L.wunschKaufen(wu.wunsch.id, t0w + 49 * STD);
+assert(gekauft.ok && L.state.saldo === 500000 - 12900, 'nach der Abkuehlzeit bucht Kaufen die Ausgabe');
+assert(L.state.transaktionen[0].typ === 'ausgabe' && L.state.transaktionen[0].name === 'Kopfhoerer',
+  'die Buchung ist eine normale Ausgabe mit dem Namen des Wunsches');
+assert(!L.wunschKaufen(wu.wunsch.id, t0w + 50 * STD).ok, 'ein gekaufter Wunsch laesst sich nicht noch einmal kaufen');
+
+const wu2 = L.wunschSpeichern({ name: 'Jacke', betrag: 8000 }, t0w).wunsch;
+const wu3 = L.wunschSpeichern({ name: 'Spiel', betrag: 6000 }, t0w + STD).wunsch;
+assert(L.offeneWuensche().map(w => w.name).join() === 'Jacke,Spiel', 'offene Wuensche: die aeltesten zuerst');
+const weg = L.wunschVerwerfen(wu2.id);
+assert(weg.ok && weg.gespart === 8000, 'verwerfen geht jederzeit, auch vor Ablauf');
+assert(L.state.saldo === 500000 - 12900, 'verwerfen bucht nichts');
+assert(!L.wunschVerwerfen(wu2.id).ok, 'verwerfen wirkt genau einmal');
+const wb = L.wunschBilanz();
+assert(wb.verworfen === 1 && wb.gespart === 8000 && wb.gekauft === 1 && wb.offen === 1,
+  'die Bilanz zaehlt verworfen, gespart, gekauft und offen');
+
+L.state.saldo = 1000;
+const zuTeuer = L.wunschKaufen(wu3.id, t0w + 100 * STD);
+assert(!zuTeuer.ok && wu3.status === 'offen', 'reicht das Konto nicht, bleibt der Wunsch offen');
+
+block('Wunschliste im Backup und bei kaputten Daten');
+const wKopie = L.exportDaten();
+L.zuruecksetzen();
+assert(L.state.wuensche.length === 0, 'Zuruecksetzen leert die Wunschliste');
+assert(L.importDaten(wKopie).ok && L.state.wuensche.length === 3, 'die Wunschliste ist im Backup');
+assert(L.state.wuensche.find(w => w.name === 'Spiel').erstellt === t0w + STD, 'der Zeitpunkt des Parkens bleibt erhalten');
+assert(L.normalisiere({ saldo: 0 }).wuensche.length === 0, 'altes Backup ohne Wunschliste laedt leer');
+const wMuell = L.normalisiere({ saldo: 0, wuensche: [{ name: 'Ok', betrag: 500, status: 'quatsch' }, { name: 'Null', betrag: 0 }, null, 'x'] });
+assert(wMuell.wuensche.length === 1 && wMuell.wuensche[0].status === 'offen',
+  'kaputte Wuensche werden verworfen, unbekannter Status wird zu offen');
+
+block('DOM-Vertrag: Wunschliste und Bremse');
+for (const id of ['wunsch-liste', 'form-wunsch', 'aus-parken', 'tagesbudget', 'aus-budget']) {
+  assert(htmlIds.has(id), '#' + id + ' steht im HTML');
+}
+assert(/data-oeffnet="wunsch"/.test(indexHtml) && /data-body="wunsch"/.test(indexHtml), 'das Wunsch-Blatt hat einen Oeffner');
+assert(/BREMSE_SEKUNDEN/.test(appJs) && /Date\.now\(\) < bremseBis/.test(appJs),
+  'die Bremse gilt auch fuer das Absenden per Enter, nicht nur fuer den Knopf');
+assert(/visibilitychange/.test(appJs), 'kommt die App wieder nach vorn, wird neu gezeichnet');
+
+block('Muster: spontane Ausgaben und "trotz Warnung"');
+L.zuruecksetzen();
+L.einzahlen(300000, 'Start');
+assert(L.monatsMuster().anzahl === 0 && L.monatsMuster().summe === 0, 'ohne Ausgaben ist das Muster leer');
+L.ausgeben(100, 'Kaugummi');
+const mKlein = L.monatsMuster();
+assert(mKlein.anzahl === 1 && mKlein.summe === 100, 'eine spontane Ausgabe wird gezaehlt');
+// 2990 von 3000 Euro: mehr als drei Tagesbudgets, ausser am letzten Tag des Monats
+const mGross = L.ausgeben(250000, 'Fernseher');
+if (mGross.warnung) {
+  assert(L.state.transaktionen[0].gewarnt === true, 'eine Ausgabe trotz Warnung wird als solche gemerkt');
+  assert(L.monatsMuster().trotzWarnung === 1 && L.monatsMuster().summeTrotz === 250000,
+    'das Muster zaehlt sie und ihre Summe');
+} else {
+  assert(true, 'letzter Tag des Monats: keine Budget-Warnung moeglich, uebersprungen');
+}
+assert(!('gewarnt' in L.state.transaktionen[1]), 'ohne Warnung traegt die Buchung kein Kennzeichen');
+const vorEinkauf = L.monatsMuster().anzahl;
+L.einkaufHinzu({ name: 'Brot', preis: 250, menge: 1 });
+L.einkaufAbschliessen(null, 'Baecker');
+assert(L.state.transaktionen[0].art === 'einkauf', 'ein gebuchter Einkauf traegt seine Herkunft');
+assert(L.monatsMuster().anzahl === vorEinkauf, 'ein Einkauf von der Liste zaehlt nicht als spontan');
+const mW = L.wunschSpeichern({ name: 'Buch', betrag: 1500 }, Date.now() - 49 * 3600000).wunsch;
+assert(L.wunschKaufen(mW.id).ok && L.state.transaktionen[0].art === 'wunsch', 'ein gekaufter Wunsch traegt seine Herkunft');
+assert(L.monatsMuster().anzahl === vorEinkauf, 'ein abgekuehlter Wunsch zaehlt nicht als spontan');
+const mW2 = L.wunschSpeichern({ name: 'Lampe', betrag: 4000 }).wunsch;
+L.wunschVerwerfen(mW2.id);
+assert(L.monatsMuster().verworfen === 1 && L.monatsMuster().gespart === 4000, 'verworfene Wuensche des Monats stehen im Muster');
+assert(L.monatsMuster('1999-01').anzahl === 0, 'ein anderer Monat hat sein eigenes Muster');
+const mRund = L.normalisiere(JSON.parse(L.exportDaten()).daten);
+assert(mRund.transaktionen.some(x => x.art === 'einkauf') && mRund.transaktionen.some(x => x.art === 'wunsch'),
+  'Herkunft und Kennzeichen ueberleben das Backup');
+assert(htmlIds.has('muster'), '#muster steht im HTML');
+
+block('Sparziel: ein eigener Topf');
+L.zuruecksetzen();
+L.einzahlen(200000, 'Start');
+assert(L.sparzielStand() === null, 'ohne Sparziel gibt es keinen Stand');
+assert(!L.sparzielEinzahlen(1000).ok, 'ohne Sparziel laesst sich nichts zuruecklegen');
+assert(!L.sparzielSetzen({ name: '', ziel: 10000 }).ok, 'Sparziel ohne Namen wird abgelehnt');
+assert(!L.sparzielSetzen({ name: 'X', ziel: 0 }).ok, 'Sparziel ohne Zielbetrag wird abgelehnt');
+assert(L.sparzielSetzen({ name: 'Urlaub', ziel: 120000 }).neu === true, 'Sparziel angelegt');
+assert(L.state.saldo === 200000, 'anlegen bucht nichts');
+const freiVorher = L.freiVerfuegbar();
+assert(L.sparzielEinzahlen(30000).ok, '300 Euro zurueckgelegt');
+assert(L.state.saldo === 170000, 'das Geld verlaesst das Konto');
+assert(L.freiVerfuegbar() === freiVorher - 30000, 'und ist nicht mehr frei verfuegbar');
+const st = L.sparzielStand();
+assert(st.gespart === 30000 && st.rest === 90000 && st.anteil === 0.25 && !st.erreicht, 'Stand: 300 von 1200, 25 Prozent');
+assert(L.state.transaktionen[0].typ === 'sparen' && L.state.transaktionen[0].name === 'Urlaub', 'die Bewegung steht als eigene Art in der Historie');
+assert(L.monatsBilanz().ausgaben === 0 && L.monatsMuster().anzahl === 0, 'zuruecklegen ist keine Ausgabe und kein Impulskauf');
+assert(gespeichert().sparziel.gespart === 30000, 'der Topf ist persistiert');
+assert(!L.sparzielEinzahlen(0).ok, 'zuruecklegen von 0 wird abgelehnt');
+
+block('Sparziel: nur aus dem freien Geld');
+const tagTopf = Math.min(28, new Date().getDate() + 1);
+if (tagTopf > new Date().getDate()) {
+  L.postenSpeichern({ name: 'Miete', betrag: 150000, tag: tagTopf });
+  assert(L.freiVerfuegbar() === 20000, 'frei sind noch 200 Euro');
+  const zuViel = L.sparzielEinzahlen(20001);
+  assert(!zuViel.ok && zuViel.fehler.includes(L.eur(20000)), 'mehr als das freie Geld geht nicht in den Topf');
+  assert(L.state.saldo === 170000 && L.sparzielStand().gespart === 30000, 'der abgelehnte Versuch hat nichts veraendert');
+  assert(L.sparzielEinzahlen(20000).ok && L.freiVerfuegbar() === 0, 'genau das freie Geld geht');
+  L.postenLoeschen(L.state.posten[0].id);
+  L.sparzielEntnehmen(20000);
+} else {
+  assert(true, 'heute ist Monatsende: nicht pruefbar, uebersprungen');
+}
+
+block('Sparziel: entnehmen, aendern, aufloesen');
+assert(!L.sparzielEntnehmen(30001).ok, 'mehr als im Topf liegt laesst sich nicht entnehmen');
+assert(L.sparzielEntnehmen(10000).ok && L.state.saldo === 180000 && L.sparzielStand().gespart === 20000,
+  'entnehmen legt das Geld zurueck aufs Konto');
+assert(L.state.transaktionen[0].typ === 'entnahme', 'die Entnahme steht in der Historie');
+assert(L.monatsBilanz().einzahlungen === 200000, 'eine Entnahme zaehlt nicht als Einzahlung');
+assert(L.sparzielSetzen({ name: 'Reise', ziel: 40000 }).neu === false, 'Name und Ziel lassen sich aendern');
+assert(L.sparzielStand().gespart === 20000 && L.sparzielStand().anteil === 0.5, 'was im Topf liegt, bleibt dabei');
+const fertig = L.sparzielEinzahlen(20000);
+assert(fertig.ok && fertig.erreicht && L.sparzielStand().erreicht, 'das Erreichen des Ziels wird gemeldet');
+assert(L.sparzielEinzahlen(1000).erreicht === false, 'aber nur einmal, nicht bei jeder weiteren Einzahlung');
+assert(L.sparzielStand().anteil === 1 && L.sparzielStand().rest === 0, 'ueber dem Ziel bleibt der Anteil bei 100 Prozent');
+const saldoVorAufl = L.state.saldo;
+const aufl = L.sparzielAufloesen();
+assert(aufl.ok && aufl.zurueck === 41000 && L.state.saldo === saldoVorAufl + 41000, 'aufloesen gibt den Topf aufs Konto zurueck');
+assert(L.state.sparziel === null && L.state.saldo === 200000, 'danach gibt es kein Sparziel mehr und kein Cent fehlt');
+
+block('Sparziel: eine Ausgabe dagegenstellen');
+L.zuruecksetzen();
+L.einzahlen(500000, 'Start');
+assert(L.sparzielVergleich(5000) === null, 'ohne Sparziel kein Vergleich');
+L.sparzielSetzen({ name: 'Rad', ziel: 100000 });
+assert(L.sparRateProTag() === 0, 'ohne Einzahlungen gibt es kein Spar-Tempo');
+assert(/10 % von dem, was dir/.test(L.sparzielVergleich(10000)), 'ohne Tempo: Anteil an dem, was noch fehlt');
+assert(L.sparzielVergleich(10) === null, 'unter einem Prozent wird nichts gesagt');
+L.sparzielEinzahlen(30000);
+assert(L.sparRateProTag() === 1000, '300 Euro in 30 Tagen sind 10 Euro pro Tag');
+assert(/etwa 5 Tage/.test(L.sparzielVergleich(5000)), 'mit Tempo: 50 Euro sind etwa 5 Tage Sparen');
+assert(/auf einen Schlag erreicht/.test(L.sparzielVergleich(70000)), 'reicht der Betrag fuer den Rest, wird das gesagt');
+L.sparzielEntnehmen(30000);
+assert(L.sparRateProTag() === 0, 'Entnahmen ziehen vom Tempo ab, negativ wird es nie');
+
+block('Sparziel im Backup und bei kaputten Daten');
+L.sparzielEinzahlen(12345);
+const tKopie = L.exportDaten();
+L.zuruecksetzen();
+assert(L.state.sparziel === null, 'Zuruecksetzen loescht das Sparziel');
+assert(L.importDaten(tKopie).ok && L.state.sparziel.gespart === 12345 && L.state.sparziel.name === 'Rad', 'der Topf ist im Backup');
+assert(L.state.transaktionen.some(x => x.typ === 'sparen') && L.state.transaktionen.some(x => x.typ === 'entnahme'),
+  'die neuen Buchungsarten ueberleben das Backup');
+assert(L.normalisiere({ saldo: 0 }).sparziel === null, 'altes Backup ohne Sparziel laedt ohne');
+assert(L.normalisiere({ saldo: 0, sparziel: { name: 'X', ziel: 'viel' } }).sparziel === null, 'ein Ziel ohne Betrag wird verworfen');
+assert(L.normalisiere({ saldo: 0, sparziel: { ziel: 5000, gespart: -3 } }).sparziel.gespart === 0, 'ein negativer Topf wird zu 0');
+
+block('DOM-Vertrag: Sparziel');
+for (const id of ['sparziel-karte', 'sparziel-leer', 'form-sparen', 'form-sparziel', 'sp-entnehmen', 'sz-aufloesen', 'aus-ziel']) {
+  assert(htmlIds.has(id), '#' + id + ' steht im HTML');
+}
+assert(/data-oeffnet="sparen"/.test(indexHtml) && /data-oeffnet="sparziel"/.test(indexHtml), 'beide Spar-Blaetter haben einen Oeffner');
 
 // ------------------------------------------------------------------ Fazit
 
