@@ -1417,6 +1417,19 @@ select:focus-visible,
 
 /* ------------------------------------------------ Grundbedarf & Sofortkauf */
 
+#stichtag-wahl {
+  margin-bottom: 1rem;
+}
+
+/* Hinweis, der sich antippen laesst */
+.hinweis-knopf {
+  width: 100%;
+  font: inherit;
+  font-size: 0.875rem;
+  text-align: left;
+  cursor: pointer;
+}
+
 #form-korrektur .warnung {
   margin-bottom: 1rem;
 }

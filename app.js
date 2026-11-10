@@ -11,7 +11,7 @@ const MONATE = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
 const TAGE = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 const MAX_HISTORIE = 300;
 
-let state = { saldo: 0, posten: [], transaktionen: [], artikel: [], einkauf: [], wuensche: [], sparziel: null };
+let state = { saldo: 0, posten: [], transaktionen: [], artikel: [], einkauf: [], wuensche: [], sparziel: null, stichtag: { art: 'monat' } };
 
 // ---------------------------------------------------------------- Hilfsmittel
 
@@ -155,6 +155,7 @@ function normalisiere(roh) {
       .filter(z => z && typeof z === 'object')
       .map(einkaufPosNormalisieren) : [],
     sparziel: sparzielNormalisieren(roh.sparziel),
+    stichtag: stichtagNormalisieren(roh.stichtag),
     wuensche: Array.isArray(roh.wuensche) ? roh.wuensche
       .filter(w => w && typeof w === 'object' && Number.isFinite(w.betrag) && w.betrag > 0)
       .slice(0, MAX_WUENSCHE)
@@ -262,12 +263,119 @@ function termineImZeitraum(p, von, bis) {
   return raus;
 }
 
-// Termine, die diesen Monat noch kommen (ab morgen bis Monatsende)
+/*
+  Zeitraum & Stichtag
+  -------------------
+  „Frei verfügbar“, Tagesbudget und die Zahlen der Übersicht gelten für einen
+  Zeitraum. Früher war das stur der Kalendermonat. Wer sein Geld nicht zum
+  Ersten bekommt (oder an wechselnden Tagen, z. B. AMS), stellt den Stichtag
+  ein - den Tag, an dem das nächste Geld kommt und der Zeitraum neu beginnt:
+
+      { art: 'monat' }                       Kalendermonat (Standard)
+      { art: 'fix', tag: 1..31 }             jeden Monat am selben Tag
+      { art: 'datum', datum: ISO, start }    ein konkretes nächstes Datum
+
+  Bei 'datum' muss nach jedem Stichtag das nächste Datum eingetragen werden.
+  Bis das passiert, rechnet die App mit „einen Monat später“ weiter und
+  meldet `faellig`. `start` ist der Beginn des laufenden Zeitraums.
+*/
+function stichtagNormalisieren(s) {
+  const iso = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+  if (s && s.art === 'fix' && Number.isFinite(s.tag)) {
+    return { art: 'fix', tag: Math.min(31, Math.max(1, Math.round(s.tag))) };
+  }
+  if (s && s.art === 'datum' && iso(s.datum)) {
+    return { art: 'datum', datum: s.datum, start: iso(s.start) ? s.start : null };
+  }
+  return { art: 'monat' };
+}
+
+// Derselbe Tag n Monate weiter; der 31. rutscht in kurzen Monaten auf den letzten
+function monatWeiter(datum, n, ankerTag) {
+  const erster = new Date(datum.getFullYear(), datum.getMonth() + n, 1);
+  return new Date(erster.getFullYear(), erster.getMonth(),
+    effektiverTag(ankerTag, erster.getFullYear(), erster.getMonth()));
+}
+
+/*
+  Der laufende Zeitraum:
+    von        erster Tag
+    bis        letzter Tag (der Tag vor dem Stichtag)
+    naechster  der Stichtag selbst - dann beginnt der neue Zeitraum
+    faellig    bei art 'datum': der eingetragene Stichtag ist erreicht, es
+               fehlt das nächste Datum
+*/
+function periode(jetzt) {
+  const j = jetzt || new Date();
+  const t0 = new Date(j.getFullYear(), j.getMonth(), j.getDate());
+  const s = state.stichtag || { art: 'monat' };
+  let von, naechster, faellig = false;
+
+  if (s.art === 'fix') {
+    const dieser = monatWeiter(t0, 0, s.tag);
+    if (t0 >= dieser) { von = dieser; naechster = monatWeiter(t0, 1, s.tag); }
+    else { von = monatWeiter(t0, -1, s.tag); naechster = dieser; }
+  } else if (s.art === 'datum') {
+    naechster = datumVon(s.datum);
+    const anker = naechster.getDate();
+    von = s.start ? datumVon(s.start) : monatWeiter(naechster, -1, anker);
+    while (naechster <= t0) {
+      faellig = true;
+      von = naechster;
+      naechster = monatWeiter(naechster, 1, anker);
+    }
+    if (von > t0) von = t0;
+  } else {
+    von = new Date(t0.getFullYear(), t0.getMonth(), 1);
+    naechster = new Date(t0.getFullYear(), t0.getMonth() + 1, 1);
+  }
+  const bis = new Date(naechster.getFullYear(), naechster.getMonth(), naechster.getDate() - 1);
+  return { art: s.art, von, bis, naechster, faellig };
+}
+
+function stichtagSetzen({ art, tag, datum }, jetzt) {
+  if (art === 'fix') {
+    if (!Number.isFinite(tag) || tag < 1 || tag > 31) return { ok: false, fehler: 'Bitte einen Tag zwischen 1 und 31 eingeben.' };
+    state.stichtag = { art: 'fix', tag: Math.round(tag) };
+  } else if (art === 'datum') {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(datum || ''))) return { ok: false, fehler: 'Bitte ein Datum wählen.' };
+    const j = jetzt || new Date();
+    const t0 = new Date(j.getFullYear(), j.getMonth(), j.getDate());
+    if (datumVon(datum) <= t0) return { ok: false, fehler: 'Der Stichtag muss in der Zukunft liegen.' };
+    // Der laufende Zeitraum läuft weiter - er endet nur an einem anderen Tag
+    const start = isoVon(periode(j).von);
+    state.stichtag = { art: 'datum', datum: String(datum), start };
+  } else {
+    state.stichtag = { art: 'monat' };
+  }
+  speichere();
+  return { ok: true, periode: periode(jetzt) };
+}
+
+// Für Texte: „bis Monatsende“ / „bis zum 5. Dezember“ und „diesen Monat“ / „seit dem 5. November“
+function periodeText(jetzt) {
+  const p = periode(jetzt);
+  if (p.art === 'monat') return { ende: 'bis Monatsende', zeitraum: 'diesen Monat', Zeitraum: 'Diesen Monat' };
+  const tag = dt => dt.getDate() + '. ' + MONATE[dt.getMonth()];
+  return { ende: 'bis zum ' + tag(p.naechster), zeitraum: 'seit dem ' + tag(p.von), Zeitraum: 'Seit dem ' + tag(p.von) };
+}
+
+// Gehört ein Datum (ISO) in den laufenden Zeitraum - oder, mit monatsKey, in diesen Kalendermonat?
+function zeitraumFilter(monatsKey) {
+  if (monatsKey) return iso => String(iso).slice(0, 7) === monatsKey;
+  const p = periode();
+  const von = isoVon(p.von), bis = isoVon(p.bis);
+  return iso => {
+    const s = String(iso).slice(0, 10);
+    return s >= von && s <= bis;
+  };
+}
+
+// Termine, die im laufenden Zeitraum noch kommen (ab morgen bis zum Tag vor dem Stichtag)
 function offeneTermine() {
   const jetzt = new Date();
   const morgen = new Date(jetzt.getFullYear(), jetzt.getMonth(), jetzt.getDate() + 1);
-  const monatsEnde = new Date(jetzt.getFullYear(), jetzt.getMonth(),
-    tageImMonat(jetzt.getFullYear(), jetzt.getMonth()));
+  const monatsEnde = periode(jetzt).bis;
   if (morgen > monatsEnde) return [];
   const raus = [];
   for (const p of state.posten) {
@@ -312,9 +420,11 @@ function warnschwelle() {
 */
 const BUDGET_TAGE_WARNUNG = 3;
 
+// Tage bis zum Ende des Zeitraums, heute zählt mit
 function restTage() {
   const jetzt = new Date();
-  return tageImMonat(jetzt.getFullYear(), jetzt.getMonth()) - jetzt.getDate() + 1;
+  const t0 = new Date(jetzt.getFullYear(), jetzt.getMonth(), jetzt.getDate());
+  return Math.max(1, tageZwischen(t0, periode(jetzt).bis) + 1);
 }
 
 function freiVerfuegbar() {
@@ -402,8 +512,8 @@ const KORREKTUR_GRUND_MIN = 3;
 
 // Wie oft und um wie viel wurde der Kontostand diesen Monat von Hand geändert?
 function korrekturenImMonat(monatsKey) {
-  const key = monatsKey || heute().monatsKey;
-  const liste = state.transaktionen.filter(t => t.typ === 'korrektur' && String(t.datum).slice(0, 7) === key);
+  const drin = zeitraumFilter(monatsKey);
+  const liste = state.transaktionen.filter(t => t.typ === 'korrektur' && drin(t.datum));
   return {
     anzahl: liste.length,
     netto: liste.reduce((s, t) => s + (t.plus ? t.betrag : -t.betrag), 0),
@@ -440,7 +550,7 @@ function pruefeAusgabe(betrag, grundbedarf) {
   } else if (budget > 0 && rest > budget * BUDGET_TAGE_WARNUNG) {
     gruende.push('budget');
     texte.push(eur(rest) + ' sind ' + budgetTageText(rest) + ' Tage deines Budgets (' +
-      eur(budget) + ' pro Tag bis Monatsende).');
+      eur(budget) + ' pro Tag ' + periodeText().ende + ').');
   }
 
   // Termine zählen, nicht Posten - dieselbe Summe wie warnschwelle() und die
@@ -477,11 +587,11 @@ function ausgeben(betrag, notiz, art, grundbedarf) {
   gerade überlegt.
 */
 function monatsMuster(monatsKey) {
-  const key = monatsKey || heute().monatsKey;
-  const imMonat = state.transaktionen.filter(t => t.typ === 'ausgabe' && String(t.datum).slice(0, 7) === key);
+  const drin = zeitraumFilter(monatsKey);
+  const imMonat = state.transaktionen.filter(t => t.typ === 'ausgabe' && drin(t.datum));
   const spontan = imMonat.filter(t => !t.art);
   const trotz = spontan.filter(t => t.gewarnt);
-  const verworfen = state.wuensche.filter(w => w.status === 'verworfen' && String(w.entschieden).slice(0, 7) === key);
+  const verworfen = state.wuensche.filter(w => w.status === 'verworfen' && drin(w.entschieden));
   return {
     anzahl: spontan.length,
     summe: summe(spontan),
@@ -790,8 +900,8 @@ function postenLoeschen(id) {
 }
 
 function monatsBilanz(monatsKey) {
-  const key = monatsKey || heute().monatsKey;
-  const imMonat = state.transaktionen.filter(t => String(t.datum).slice(0, 7) === key);
+  const drin = zeitraumFilter(monatsKey);
+  const imMonat = state.transaktionen.filter(t => drin(t.datum));
   const nach = typ => summe(imMonat.filter(t => t.typ === typ));
   return {
     einzahlungen: nach('einzahlung'),
@@ -802,7 +912,7 @@ function monatsBilanz(monatsKey) {
 }
 
 function zuruecksetzen() {
-  state = { saldo: 0, posten: [], transaktionen: [], artikel: [], einkauf: [], wuensche: [], sparziel: null };
+  state = { saldo: 0, posten: [], transaktionen: [], artikel: [], einkauf: [], wuensche: [], sparziel: null, stichtag: { art: 'monat' } };
   speichere();
 }
 
@@ -1380,7 +1490,7 @@ if (typeof globalThis !== 'undefined') {
     sparzielSetzen, sparzielStand, sparzielEinzahlen, sparzielEntnehmen, sparzielAufloesen,
     sparRateProTag, sparzielVergleich,
     einkaufGrundbedarf, sofortKauf,
-    saldoKorrigieren, korrekturenImMonat, eanGueltig, eanAusZeile,
+    saldoKorrigieren, korrekturenImMonat, periode, periodeText, stichtagSetzen, eanGueltig, eanAusZeile,
   };
 }
 
@@ -1414,6 +1524,8 @@ if (istBrowser) {
     'ek-menge', 'ek-preis', 'ek-urteil', 'ek-aus-vorrat', 'einkauf-liste', 'einkauf-leer',
     'einkauf-summe', 'ek-echt', 'ek-laden', 'ek-buchen', 'ek-leeren', 'ek-fuss', 'ek-buchen-summe',
     'tagesbudget', 'aus-budget', 'aus-parken', 'muster', 'install-bereich', 'install-einst',
+    'stichtag-hinweis', 'stichtag-wahl', 'stichtag-fix-feld', 'stichtag-tag', 'stichtag-datum-feld',
+    'stichtag-datum', 'stichtag-speichern', 'stichtag-info',
     'form-korrektur', 'korr-betrag', 'korr-notiz', 'korr-info', 'korr-auf', 'korr-submit', 'korr-folgen',
     'wunsch-liste', 'wunsch-leer', 'wunsch-bilanz', 'form-wunsch', 'wun-name', 'wun-betrag',
     'sparziel-karte', 'sparziel-leer', 'sparziel-aendern', 'sparziel-name', 'sparziel-stand',
@@ -1557,7 +1669,15 @@ if (istBrowser) {
     knoten['saldo'].classList.toggle('negativ', state.saldo < 0);
     knoten['saldo-hinweis'].textContent = termine.length
       ? 'Reserviert ' + eur(offen) + ' · ' + termine.length + (termine.length === 1 ? ' Termin' : ' Termine')
-      : (state.posten.length ? 'Diesen Monat steht nichts mehr an' : 'Noch keine Posten angelegt');
+      : (state.posten.length ? 'Steht ' + periodeText().ende + ' nichts mehr an' : 'Noch keine Posten angelegt');
+
+    // Stichtag als Datum: ist er erreicht, fehlt das nächste Datum
+    const zeitraum = periode();
+    knoten['stichtag-hinweis'].hidden = !zeitraum.faellig;
+    knoten['stichtag-hinweis'].textContent = zeitraum.faellig
+      ? 'Dein Stichtag ist erreicht. Wann kommt das nächste Geld? Tippe hier, um das Datum einzutragen – bis dahin rechnet die App mit dem ' +
+        zeitraum.naechster.getDate() + '. ' + MONATE[zeitraum.naechster.getMonth()] + '.'
+      : '';
 
     knoten['monat-frei-hinweis'].hidden = b.frei >= 0;
     knoten['monat-frei-hinweis'].textContent = b.frei < 0
@@ -1572,9 +1692,9 @@ if (istBrowser) {
     const m = monatsMuster();
     const satz = [];
     satz.push(m.anzahl
-      ? m.anzahl + (m.anzahl === 1 ? ' spontane Ausgabe' : ' spontane Ausgaben') + ' diesen Monat, zusammen ' + eur(m.summe) +
+      ? m.anzahl + (m.anzahl === 1 ? ' spontane Ausgabe' : ' spontane Ausgaben') + ' ' + periodeText().zeitraum + ', zusammen ' + eur(m.summe) +
         (m.trotzWarnung ? ', davon ' + m.trotzWarnung + ' trotz Warnung (' + eur(m.summeTrotz) + ')' : '')
-      : 'Diesen Monat noch keine spontane Ausgabe');
+      : periodeText().Zeitraum + ' noch keine spontane Ausgabe');
     if (m.verworfen) {
       satz.push(m.verworfen + (m.verworfen === 1 ? ' Wunsch' : ' Wünsche') + ' verworfen, ' + eur(m.gespart) + ' gespart');
     }
@@ -1582,7 +1702,7 @@ if (istBrowser) {
 
     const tage = restTage();
     knoten['tagesbudget'].textContent = b.frei > 0
-      ? 'Tagesbudget ' + eur(tagesbudget()) + ' · noch ' + tage + (tage === 1 ? ' Tag' : ' Tage') + ' bis Monatsende'
+      ? 'Tagesbudget ' + eur(tagesbudget()) + ' · noch ' + tage + (tage === 1 ? ' Tag' : ' Tage') + ' ' + periodeText().ende
       : '';
   }
 
@@ -2793,7 +2913,7 @@ if (istBrowser) {
     if (name === 'einzahlung') rendEinzahlungLive();
     if (name === 'sparen') rendSparenLive();
     if (name === 'sparziel') sparzielFormularFuellen();
-    if (name === 'einstellungen') korrekturFuellen();
+    if (name === 'einstellungen') { korrekturFuellen(); stichtagFuellen(); }
     if (name === 'sofort') {
       // Gleich die Kamera: im Laden zählt jeder Handgriff
       sofortLeeren();
@@ -3262,6 +3382,56 @@ if (istBrowser) {
     leser.readAsText(datei);
   });
 
+  // ------------------------------------------------------------- Stichtag
+
+  let stichtagWahl = 'monat';
+  const datumLang = dt => dt.getDate() + '. ' + MONATE[dt.getMonth()];
+
+  function stichtagZeigen() {
+    for (const b of knoten['stichtag-wahl'].querySelectorAll('button')) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-stichtag') === stichtagWahl ? 'true' : 'false');
+    }
+    knoten['stichtag-fix-feld'].hidden = stichtagWahl !== 'fix';
+    knoten['stichtag-datum-feld'].hidden = stichtagWahl !== 'datum';
+  }
+
+  function stichtagFuellen() {
+    const s = state.stichtag || { art: 'monat' };
+    const p = periode();
+    stichtagWahl = s.art;
+    knoten['stichtag-tag'].value = s.art === 'fix' ? s.tag : '';
+    // Ist der eingetragene Stichtag vorbei, bleibt das Feld leer: ein neues Datum ist gefragt
+    knoten['stichtag-datum'].value = s.art === 'datum' && !p.faellig ? s.datum : '';
+    const morgen = new Date();
+    morgen.setDate(morgen.getDate() + 1);
+    knoten['stichtag-datum'].min = isoVon(morgen);
+    stichtagZeigen();
+    const tage = restTage();
+    knoten['stichtag-info'].textContent = 'Laufender Zeitraum: ' + datumLang(p.von) + ' bis ' + datumLang(p.bis) +
+      ' · noch ' + tage + (tage === 1 ? ' Tag' : ' Tage') + '.' +
+      (p.faellig ? ' Der eingetragene Stichtag ist erreicht – bitte das nächste Datum eintragen.' : '');
+  }
+
+  for (const b of knoten['stichtag-wahl'].querySelectorAll('button')) {
+    b.addEventListener('click', () => {
+      stichtagWahl = b.getAttribute('data-stichtag');
+      stichtagZeigen();
+    });
+  }
+
+  knoten['stichtag-speichern'].addEventListener('click', () => {
+    const r = stichtagSetzen({
+      art: stichtagWahl,
+      tag: parseInt(knoten['stichtag-tag'].value, 10),
+      datum: knoten['stichtag-datum'].value,
+    });
+    if (!r.ok) return toast(r.fehler, 'warn');
+    rendAlle();
+    stichtagFuellen();
+    const tage = restTage();
+    toast('Zeitraum läuft bis ' + datumLang(r.periode.bis) + ' · noch ' + tage + (tage === 1 ? ' Tag' : ' Tage') + '.', 'ok');
+  });
+
   /*
     Kontostand korrigieren - mit Absicht umständlich. Den Stand von Hand zu
     ändern ist der einfachste Weg, sich Geld herbeizurechnen. Deshalb: das
@@ -3299,7 +3469,7 @@ if (istBrowser) {
     const diff = neu - state.saldo;
     const bisher = korrekturenImMonat();
     const schon = bisher.anzahl
-      ? ' Diesen Monat schon ' + bisher.anzahl + (bisher.anzahl === 1 ? ' Korrektur' : ' Korrekturen') +
+      ? ' ' + periodeText().Zeitraum + ' schon ' + bisher.anzahl + (bisher.anzahl === 1 ? ' Korrektur' : ' Korrekturen') +
         (bisher.netto ? ' (zusammen ' + vorzeichen(bisher.netto) + ')' : '') + '.'
       : '';
     knoten['korr-info'].textContent = 'In der App stehen ' + eur(state.saldo) + '.' + schon;

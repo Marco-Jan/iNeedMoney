@@ -1052,6 +1052,87 @@ block('Eigener Barcode-Leser: EAN-13 und EAN-8 aus einer Bildzeile');
   assert(L.eanAusZeile(Array.from({ length: 900 }, (_, i) => (Math.floor(i / 4) % 2 ? 40 : 215))) === null, 'ein Streifenmuster ist kein Barcode');
 }
 
+block('Stichtag: der Zeitraum muss nicht der Kalendermonat sein');
+{
+  const tag = (j, m, t) => new Date(j, m - 1, t);
+  const iso = dt => L.isoVon(dt);
+  L.zuruecksetzen();
+  let p = L.periode(tag(2026, 11, 10));
+  assert(p.art === 'monat' && iso(p.von) === '2026-11-01' && iso(p.bis) === '2026-11-30', 'Standard: der Kalendermonat');
+
+  assert(!L.stichtagSetzen({ art: 'fix', tag: 0 }).ok && !L.stichtagSetzen({ art: 'fix', tag: 32 }).ok, 'fester Tag nur 1 bis 31');
+  assert(L.stichtagSetzen({ art: 'fix', tag: 5 }).ok && gespeichert().stichtag.tag === 5, 'fester Tag wird gespeichert');
+  p = L.periode(tag(2026, 11, 10));
+  assert(iso(p.von) === '2026-11-05' && iso(p.bis) === '2026-12-04' && iso(p.naechster) === '2026-12-05', 'nach dem 5.: bis zum 4. des Folgemonats');
+  p = L.periode(tag(2026, 11, 3));
+  assert(iso(p.von) === '2026-10-05' && iso(p.bis) === '2026-11-04', 'vor dem 5.: der Zeitraum begann im Vormonat');
+  p = L.periode(tag(2026, 11, 5));
+  assert(iso(p.von) === '2026-11-05', 'am Stichtag selbst beginnt der neue Zeitraum');
+  L.stichtagSetzen({ art: 'fix', tag: 31 });
+  p = L.periode(tag(2027, 2, 10));
+  assert(iso(p.von) === '2027-01-31' && iso(p.bis) === '2027-02-27' && iso(p.naechster) === '2027-02-28', 'der 31. rutscht im Februar auf den 28.');
+  p = L.periode(tag(2026, 12, 31));
+  assert(iso(p.von) === '2026-12-31' && iso(p.bis) === '2027-01-30', 'ueber den Jahreswechsel');
+
+  // Konkretes Datum
+  const jetzt = tag(2026, 11, 10);
+  L.stichtagSetzen({ art: 'monat' });
+  assert(!L.stichtagSetzen({ art: 'datum', datum: '2026-11-10' }, jetzt).ok, 'heute ist kein Stichtag in der Zukunft');
+  assert(!L.stichtagSetzen({ art: 'datum', datum: 'bald' }, jetzt).ok, 'ohne Datum kein Stichtag');
+  assert(L.stichtagSetzen({ art: 'datum', datum: '2026-11-27' }, jetzt).ok, 'ein Datum in der Zukunft geht');
+  p = L.periode(jetzt);
+  assert(iso(p.von) === '2026-11-01' && iso(p.bis) === '2026-11-26' && !p.faellig, 'der laufende Zeitraum laeuft weiter und endet am Tag davor');
+  p = L.periode(tag(2026, 11, 27));
+  assert(p.faellig && iso(p.von) === '2026-11-27' && iso(p.naechster) === '2026-12-27', 'am Stichtag: neuer Zeitraum, naechstes Datum fehlt, Annahme ein Monat');
+  p = L.periode(tag(2027, 1, 3));
+  assert(p.faellig && iso(p.von) === '2026-12-27' && iso(p.bis) === '2027-01-26', 'lange nicht eingetragen: es wird monatsweise weitergerechnet');
+  assert(L.stichtagSetzen({ art: 'datum', datum: '2026-12-23' }, tag(2026, 11, 28)).ok, 'das naechste Datum eintragen');
+  p = L.periode(tag(2026, 11, 28));
+  assert(iso(p.von) === '2026-11-27' && iso(p.bis) === '2026-12-22' && !p.faellig, 'der neue Zeitraum beginnt am alten Stichtag');
+
+  // Backup und kaputte Daten
+  const kopieS = L.exportDaten();
+  L.zuruecksetzen();
+  assert(L.state.stichtag.art === 'monat', 'Zuruecksetzen stellt den Kalendermonat wieder ein');
+  assert(L.importDaten(kopieS).ok && L.state.stichtag.datum === '2026-12-23' && L.state.stichtag.start === '2026-11-27', 'der Stichtag ist im Backup');
+  assert(L.normalisiere({ saldo: 0 }).stichtag.art === 'monat', 'altes Backup ohne Stichtag: Kalendermonat');
+  assert(L.normalisiere({ saldo: 0, stichtag: { art: 'fix', tag: 99 } }).stichtag.tag === 31, 'ein unmoeglicher Tag wird begrenzt');
+  assert(L.normalisiere({ saldo: 0, stichtag: { art: 'datum', datum: 'x' } }).stichtag.art === 'monat', 'ein kaputtes Datum faellt auf den Monat zurueck');
+}
+
+block('Stichtag: offene Posten, Tagesbudget und Zahlen folgen dem Zeitraum');
+{
+  L.zuruecksetzen();
+  L.einzahlen(100000, 'Start');
+  const heuteD = new Date();
+  const t0 = new Date(heuteD.getFullYear(), heuteD.getMonth(), heuteD.getDate());
+  const in5 = new Date(t0.getFullYear(), t0.getMonth(), t0.getDate() + 5);
+  const in40 = new Date(t0.getFullYear(), t0.getMonth(), t0.getDate() + 40);
+  // Ein Posten, der in 5 Tagen faellig ist - egal ob das noch dieser Monat ist
+  L.postenSpeichern({ name: 'Miete', betrag: 30000, tag: in5.getDate(), start: L.isoVon(in5) });
+  const faelltIn5 = L.termineImZeitraum(L.state.posten[0], in5, in5).length === 1;
+  L.stichtagSetzen({ art: 'datum', datum: L.isoVon(in40) });
+  assert(L.restTage() === 40, 'Tage bis zum Stichtag statt bis Monatsende');
+  if (faelltIn5) {
+    assert(L.summeOffen() >= 30000 && L.offeneTermine().some(x => L.isoVon(x.datum) === L.isoVon(in5)),
+      'ein Posten vor dem Stichtag ist reserviert, auch ueber das Monatsende hinaus');
+    assert(L.tagesbudget() === Math.floor((100000 - L.summeOffen()) / 40), 'das Tagesbudget teilt durch die Tage bis zum Stichtag');
+  } else {
+    assert(true, 'Monatslaenge: Termin nicht pruefbar, uebersprungen');
+  }
+  const in3 = new Date(t0.getFullYear(), t0.getMonth(), t0.getDate() + 3);
+  L.stichtagSetzen({ art: 'datum', datum: L.isoVon(in3) });
+  assert(L.restTage() === 3 && L.summeOffen() === 0, 'liegt der Stichtag vor dem Posten, ist er noch nicht reserviert');
+  assert(/bis zum \d+\. /.test(L.periodeText().ende) && /^seit dem /.test(L.periodeText().zeitraum), 'die Texte nennen den Stichtag');
+  L.ausgeben(500, 'Kaffee');
+  assert(L.monatsBilanz().ausgaben === 500 && L.monatsMuster().anzahl === 1, 'Buchungen von heute liegen im laufenden Zeitraum');
+  L.stichtagSetzen({ art: 'monat' });
+  assert(L.periodeText().ende === 'bis Monatsende', 'zurueck auf den Kalendermonat');
+}
+for (const id of ['stichtag-wahl', 'stichtag-tag', 'stichtag-datum', 'stichtag-speichern', 'stichtag-info', 'stichtag-hinweis']) {
+  assert(htmlIds.has(id), '#' + id + ' steht im HTML');
+}
+
 // ------------------------------------------------------------------ Fazit
 
 if (fehler) {

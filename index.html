@@ -49,6 +49,7 @@
         </div>
         <p class="held-budget" id="tagesbudget"></p>
         <p class="warnung" id="monat-frei-hinweis" hidden></p>
+        <button type="button" class="warnung warnung-sanft hinweis-knopf" id="stichtag-hinweis" data-oeffnet="einstellungen" hidden></button>
       </div>
 
       <div class="aktionen-gross">
@@ -515,6 +516,25 @@
           <button type="button" data-thema="hell" aria-pressed="false">Hell</button>
           <button type="button" data-thema="dunkel" aria-pressed="false">Dunkel</button>
         </div>
+
+        <h3 class="unter-titel" id="stichtag-titel">Stichtag</h3>
+        <p class="fussnote oben">Wann kommt dein n&auml;chstes Geld? Bis dahin rechnet die App: offene Posten, Tagesbudget und die Zahlen der &Uuml;bersicht.</p>
+        <div class="segment" id="stichtag-wahl" role="group" aria-labelledby="stichtag-titel">
+          <button type="button" data-stichtag="monat" aria-pressed="true">Monatsende</button>
+          <button type="button" data-stichtag="fix" aria-pressed="false">Fester Tag</button>
+          <button type="button" data-stichtag="datum" aria-pressed="false">Datum</button>
+        </div>
+        <div id="stichtag-fix-feld" hidden>
+          <label for="stichtag-tag">Das Geld kommt jeden Monat am</label>
+          <input type="number" id="stichtag-tag" min="1" max="31" inputmode="numeric" placeholder="z.&nbsp;B. 5">
+        </div>
+        <div id="stichtag-datum-feld" hidden>
+          <label for="stichtag-datum">Das n&auml;chste Geld kommt am</label>
+          <input type="date" id="stichtag-datum">
+          <p class="fussnote">Nach diesem Tag fragt die App nach dem n&auml;chsten Datum.</p>
+        </div>
+        <p class="fussnote" id="stichtag-info"></p>
+        <button type="button" id="stichtag-speichern" class="knopf">Stichtag speichern</button>
 
         <div id="install-bereich" hidden>
           <h3 class="unter-titel">App</h3>

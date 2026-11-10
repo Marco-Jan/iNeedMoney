@@ -16,6 +16,7 @@ iNeedMoney: persönliche Spar-App. Features (vom Nutzer gefordert):
 - **Grundbedarf**: Artikel im Vorrat lassen sich als Grundbedarf (Lebensmittel) markieren; ihr Kauf löst keine Budget-/Drittel-Warnung aus, nur noch „mehr als frei verfügbar"
 - **Scannen & gleich bezahlen**: im Laden Barcode scannen, Preis bestätigen oder eintippen, der Betrag wird sofort abgezogen (`sofortKauf()`); Nicht-Grundbedarf läuft dabei durch Warnung und Bremse
 - **Barcode ohne Bibliothek**: `BarcodeDetector`, wo vorhanden, sonst der eigene EAN-13/EAN-8-Leser `eanAusZeile()` — keine Scanner-Bibliothek einbauen
+- **Stichtag**: der Zeitraum läuft bis zum nächsten Geld (Monatsende, fester Tag oder eingetragenes Datum) — nie direkt mit „Monatsende" rechnen, immer über `periode()` / `restTage()`
 - **Kontostand korrigieren**: in den Einstellungen, bucht den Unterschied als `korrektur` (weder Ausgabe noch Einzahlung); bewusst mit Reibung (Pflicht-Grund, Folgen anzeigen, 10 Sekunden Bremse, Rückfrage)
 - **Muster**: die Übersicht zeigt, wie viel diesen Monat spontan und trotz Warnung ausgegeben wurde
 

@@ -78,6 +78,17 @@ prüfen, dass UI und HTML zueinander passen.
   - [x] **Barcode-Scanner**: eingebaute `BarcodeDetector`-API, wo vorhanden,
         sonst der **eigene EAN-Leser** (`eanAusZeile()`, EAN-13/EAN-8);
         Eingabe von Hand als letzter Rückfall
+  - [x] **Stichtag** (Einstellungen): der Zeitraum, für den „frei verfügbar",
+        offene Posten, Tagesbudget und die Zahlen der Übersicht gelten, muss
+        nicht der Kalendermonat sein. `state.stichtag`: `{ art: 'monat' }`
+        (Standard), `{ art: 'fix', tag }` (jeden Monat am selben Tag) oder
+        `{ art: 'datum', datum, start }` (konkretes nächstes Datum, für Geld,
+        das an wechselnden Tagen kommt). `periode()` liefert `von`, `bis`,
+        `naechster`, `faellig`. Bei `datum` fragt die Übersicht nach dem
+        nächsten Datum, sobald der Stichtag erreicht ist; bis dahin wird mit
+        „einen Monat später" weitergerechnet. `monatsBilanz()` & Co. filtern
+        ohne Argument nach dem Zeitraum, mit `monatsKey` nach dem Kalendermonat.
+        Der Kalender im Posten-Tab bleibt monatsweise.
   - [x] **Kontostand korrigieren** (Einstellungen): `saldoKorrigieren()` setzt
         den Stand und bucht den Unterschied als eigene Art `'korrektur'`
         (`plus: true` = nach oben). Zählt weder als Ausgabe noch als
@@ -94,7 +105,7 @@ prüfen, dass UI und HTML zueinander passen.
         Inline-Skript im `<head>` setzt das Attribut vor dem ersten Zeichnen,
         sonst blitzt das falsche Schema auf.
 - [x] **Offline/PWA**: `manifest.json` (verlinkt!) + Service Worker (`sw.js`, Cache
-      `inneedmoney-v13`): Navigation und Assets „Netz zuerst, Cache als Rückfall",
+      `inneedmoney-v14`): Navigation und Assets „Netz zuerst, Cache als Rückfall",
       damit HTML, CSS und JS nach einem Deploy zusammenpassen. Alle Assets lokal.
 - [x] **Sprache**: UI auf Deutsch.
 - [x] **Design**: flache, ruhige Oberfläche in Dunkel und Hell mit Gold als
