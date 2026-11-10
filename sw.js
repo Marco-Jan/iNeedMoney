@@ -1,4 +1,4 @@
-const CACHE = 'inneedmoney-v10';
+const CACHE = 'inneedmoney-v11';
 const APP_SHELL = [
   './',
   './index.html',

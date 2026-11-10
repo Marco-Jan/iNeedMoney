@@ -53,6 +53,10 @@ prüfen, dass UI und HTML zueinander passen.
         Termine), nicht der Kontostand. Balken darunter: frei / reserviert.
         Darunter Monatszahlen, „Als Nächstes" (die drei nächsten Termine mit
         „in 4 Tagen") und die letzten Buchungen nach Tag gruppiert.
+  - [x] **Als App installieren**: Knopf in den Einstellungen. Hängt an
+        `beforeinstallprompt`; iOS kennt das nicht und bekommt den Weg über
+        „Teilen → Zum Home-Bildschirm" genannt. Läuft die App installiert
+        (`display-mode: standalone`), verschwindet der Abschnitt.
   - [x] Einzahlung erfassen (mit Notiz), zeigt „Konto danach"
   - [x] Posten anlegen, **bearbeiten** und löschen (Formular im Blatt)
   - [x] **Spontane Ausgabe mit Live-Warnung**: schon beim Tippen steht da, was
@@ -82,7 +86,7 @@ prüfen, dass UI und HTML zueinander passen.
         Inline-Skript im `<head>` setzt das Attribut vor dem ersten Zeichnen,
         sonst blitzt das falsche Schema auf.
 - [x] **Offline/PWA**: `manifest.json` (verlinkt!) + Service Worker (`sw.js`, Cache
-      `inneedmoney-v10`): Navigation und Assets „Netz zuerst, Cache als Rückfall",
+      `inneedmoney-v11`): Navigation und Assets „Netz zuerst, Cache als Rückfall",
       damit HTML, CSS und JS nach einem Deploy zusammenpassen. Alle Assets lokal.
 - [x] **Sprache**: UI auf Deutsch.
 - [x] **Design**: flache, ruhige Oberfläche in Dunkel und Hell mit Gold als

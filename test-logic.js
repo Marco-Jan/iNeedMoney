@@ -958,6 +958,12 @@ block('Icons: alles, was verlinkt ist, liegt im Repo und im Offline-Cache');
   assert(!/^https?:/.test(manifestIcons.concat(kopfIcons).join(' ')), 'kein Icon kommt von aussen');
 }
 
+block('DOM-Vertrag: Installieren in den Einstellungen');
+assert(htmlIds.has('install-bereich') && htmlIds.has('install-einst'), 'Abschnitt und Knopf stehen im HTML');
+assert(indexHtml.indexOf('data-body="einstellungen"') < indexHtml.indexOf('id="install-einst"'),
+  'der Knopf liegt im Einstellungs-Blatt');
+assert(/beforeinstallprompt/.test(appJs) && /appinstalled/.test(appJs), 'die Installation haengt am Browser-Ereignis');
+
 // ------------------------------------------------------------------ Fazit
 
 if (fehler) {

@@ -1243,7 +1243,7 @@ if (istBrowser) {
     'seg-einkauf', 'einkauf-budget', 'einkauf-warnung', 'form-einkauf', 'ek-name', 'ek-scan', 'ek-vorschlaege',
     'ek-menge', 'ek-preis', 'ek-urteil', 'ek-aus-vorrat', 'einkauf-liste', 'einkauf-leer',
     'einkauf-summe', 'ek-echt', 'ek-laden', 'ek-buchen', 'ek-leeren', 'ek-fuss', 'ek-buchen-summe',
-    'tagesbudget', 'aus-budget', 'aus-parken', 'muster',
+    'tagesbudget', 'aus-budget', 'aus-parken', 'muster', 'install-bereich', 'install-einst',
     'wunsch-liste', 'wunsch-leer', 'wunsch-bilanz', 'form-wunsch', 'wun-name', 'wun-betrag',
     'sparziel-karte', 'sparziel-leer', 'sparziel-aendern', 'sparziel-name', 'sparziel-stand',
     'sparziel-balken', 'sparziel-rest', 'form-sparen', 'sp-betrag', 'sp-info', 'sp-entnehmen',
@@ -2694,6 +2694,50 @@ if (istBrowser) {
     else if (abfrage.addListener) abfrage.addListener(themaAnwenden);
   }
   themaAnwenden();
+
+  // ---------------------------------------------------- Als App installieren
+
+  /*
+    Der Knopf steht in den Einstellungen. Chrome/Edge/Android melden über
+    „beforeinstallprompt“, dass die App installierbar ist; das Ereignis wird
+    aufgehoben und beim Knopfdruck ausgelöst. iOS kennt das nicht - dort
+    geht es nur über „Teilen → Zum Home-Bildschirm“, also nennt der Knopf
+    den Weg. Läuft die App schon installiert, verschwindet der Abschnitt.
+  */
+  let installEreignis = null;
+
+  const istInstalliert = () =>
+    (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+    navigator.standalone === true;
+  const istIos = () => /iphone|ipad|ipod/i.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+  function rendInstall() {
+    knoten['install-bereich'].hidden = istInstalliert();
+  }
+
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();            // kein eigener Balken des Browsers
+    installEreignis = e;
+  });
+  window.addEventListener('appinstalled', () => {
+    installEreignis = null;
+    knoten['install-bereich'].hidden = true;
+    toast('iNeedMoney ist installiert.', 'ok');
+  });
+  knoten['install-einst'].addEventListener('click', async () => {
+    if (installEreignis) {
+      const ereignis = installEreignis;
+      installEreignis = null;      // lässt sich nur einmal auslösen
+      ereignis.prompt();
+      try { await ereignis.userChoice; } catch (e) { /* abgebrochen */ }
+      return rendInstall();
+    }
+    toast(istIos()
+      ? 'In Safari das Teilen-Symbol antippen, dann „Zum Home-Bildschirm“.'
+      : 'Im Browser-Menü „App installieren“ oder „Zum Startbildschirm hinzufügen“ wählen.');
+  });
+  rendInstall();
 
   // --------------------------------------------------------------- Formulare
 
