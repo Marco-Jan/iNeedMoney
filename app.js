@@ -389,11 +389,25 @@ function saldoKorrigieren(neuerSaldo, notiz) {
   const neu = Math.round(neuerSaldo);
   const differenz = neu - state.saldo;
   if (differenz === 0) return { ok: false, fehler: 'Das ist schon dein Kontostand.' };
+  // Ohne Grund keine Korrektur: wer den Stand ändert, soll wissen, warum
+  const grund = String(notiz || '').trim();
+  if (grund.length < KORREKTUR_GRUND_MIN) return { ok: false, fehler: 'Bitte kurz angeben, warum der Stand nicht stimmt.' };
   state.saldo = neu;
-  transaktion('korrektur', Math.abs(differenz), String(notiz || '').trim() || 'Kontostand korrigiert',
-    differenz > 0 ? { plus: true } : {});
+  transaktion('korrektur', Math.abs(differenz), grund, differenz > 0 ? { plus: true } : {});
   speichere();
   return { ok: true, differenz, saldo: neu };
+}
+
+const KORREKTUR_GRUND_MIN = 3;
+
+// Wie oft und um wie viel wurde der Kontostand diesen Monat von Hand geändert?
+function korrekturenImMonat(monatsKey) {
+  const key = monatsKey || heute().monatsKey;
+  const liste = state.transaktionen.filter(t => t.typ === 'korrektur' && String(t.datum).slice(0, 7) === key);
+  return {
+    anzahl: liste.length,
+    netto: liste.reduce((s, t) => s + (t.plus ? t.betrag : -t.betrag), 0),
+  };
 }
 
 function pruefeAusgabe(betrag, grundbedarf) {
@@ -1366,7 +1380,7 @@ if (typeof globalThis !== 'undefined') {
     sparzielSetzen, sparzielStand, sparzielEinzahlen, sparzielEntnehmen, sparzielAufloesen,
     sparRateProTag, sparzielVergleich,
     einkaufGrundbedarf, sofortKauf,
-    saldoKorrigieren, eanGueltig, eanAusZeile,
+    saldoKorrigieren, korrekturenImMonat, eanGueltig, eanAusZeile,
   };
 }
 
@@ -1400,7 +1414,7 @@ if (istBrowser) {
     'ek-menge', 'ek-preis', 'ek-urteil', 'ek-aus-vorrat', 'einkauf-liste', 'einkauf-leer',
     'einkauf-summe', 'ek-echt', 'ek-laden', 'ek-buchen', 'ek-leeren', 'ek-fuss', 'ek-buchen-summe',
     'tagesbudget', 'aus-budget', 'aus-parken', 'muster', 'install-bereich', 'install-einst',
-    'form-korrektur', 'korr-betrag', 'korr-notiz', 'korr-info',
+    'form-korrektur', 'korr-betrag', 'korr-notiz', 'korr-info', 'korr-auf', 'korr-submit', 'korr-folgen',
     'wunsch-liste', 'wunsch-leer', 'wunsch-bilanz', 'form-wunsch', 'wun-name', 'wun-betrag',
     'sparziel-karte', 'sparziel-leer', 'sparziel-aendern', 'sparziel-name', 'sparziel-stand',
     'sparziel-balken', 'sparziel-rest', 'form-sparen', 'sp-betrag', 'sp-info', 'sp-entnehmen',
@@ -3248,29 +3262,89 @@ if (istBrowser) {
     leser.readAsText(datei);
   });
 
-  // Kontostand korrigieren: das Feld zeigt den jetzigen Stand, man tippt den richtigen
+  /*
+    Kontostand korrigieren - mit Absicht umständlich. Den Stand von Hand zu
+    ändern ist der einfachste Weg, sich Geld herbeizurechnen. Deshalb: das
+    Formular muss erst aufgeklappt werden, ein Grund ist Pflicht, die Folgen
+    (frei verfügbar, Tagesbudget) stehen vor dem Bestätigen da, der Knopf ist
+    `BREMSE_SEKUNDEN` lang gesperrt, und zum Schluss kommt eine Rückfrage.
+  */
+  let korrBremseBis = 0;
+  let korrTakt = null;
+
   const korrekturWert = () => {
     const s = knoten['korr-betrag'].value.trim();
     const minus = /^[-−]/.test(s);
     const cent = zuCent(s.replace(/^[-−]\s*/, ''));
     return Number.isFinite(cent) ? (minus ? -cent : cent) : NaN;
   };
+  const vorzeichen = cent => (cent > 0 ? '+' : '−') + eur(Math.abs(cent));
+
+  function korrekturKnopf() {
+    const rest = Math.ceil((korrBremseBis - Date.now()) / 1000);
+    const knopf = knoten['korr-submit'];
+    if (korrBremseBis && rest > 0) {
+      knopf.disabled = true;
+      knopf.textContent = 'Korrigieren in ' + rest + ' …';
+      return;
+    }
+    clearInterval(korrTakt);
+    korrTakt = null;
+    knopf.disabled = !korrBremseBis;
+    knopf.textContent = 'Kontostand korrigieren';
+  }
 
   function korrekturInfo() {
     const neu = korrekturWert();
     const diff = neu - state.saldo;
-    knoten['korr-info'].textContent = !Number.isFinite(neu) ? 'In der App stehen gerade ' + eur(state.saldo) + '.'
-      : diff === 0 ? 'Das ist der Stand in der App – nichts zu korrigieren.'
-        : 'In der App stehen ' + eur(state.saldo) + '. Korrektur: ' + (diff > 0 ? '+' : '−') + eur(Math.abs(diff)) + '.';
+    const bisher = korrekturenImMonat();
+    const schon = bisher.anzahl
+      ? ' Diesen Monat schon ' + bisher.anzahl + (bisher.anzahl === 1 ? ' Korrektur' : ' Korrekturen') +
+        (bisher.netto ? ' (zusammen ' + vorzeichen(bisher.netto) + ')' : '') + '.'
+      : '';
+    knoten['korr-info'].textContent = 'In der App stehen ' + eur(state.saldo) + '.' + schon;
+
+    const aendert = Number.isFinite(neu) && diff !== 0;
+    const folgen = knoten['korr-folgen'];
+    folgen.hidden = !aendert;
+    if (aendert) {
+      // Was die Korrektur bewirkt: frei verfügbar und Tagesbudget vorher/nachher
+      const frei = freiVerfuegbar();
+      const tage = restTage();
+      const budgetNeu = Math.floor(Math.max(0, frei + diff) / tage);
+      folgen.textContent = 'Korrektur ' + vorzeichen(diff) + '. Frei verfügbar: ' + eur(frei) + ' → ' + eur(frei + diff) +
+        '. Tagesbudget: ' + eur(tagesbudget()) + ' → ' + eur(budgetNeu) + '.' +
+        (diff > 0 ? ' Du rechnest dir damit mehr Geld zu – steht das wirklich so auf dem Konto?' : '');
+    }
+
+    // Bremse: läuft ab der ersten Änderung, startet beim Weitertippen nicht neu
+    if (!aendert) {
+      korrBremseBis = 0;
+    } else if (!korrBremseBis) {
+      korrBremseBis = Date.now() + BREMSE_SEKUNDEN * 1000;
+      clearInterval(korrTakt);
+      korrTakt = setInterval(korrekturKnopf, 250);
+    }
+    korrekturKnopf();
   }
 
   function korrekturFuellen() {
+    knoten['form-korrektur'].hidden = true;
+    knoten['korr-auf'].hidden = false;
     knoten['korr-betrag'].value = (state.saldo / 100).toFixed(2).replace('.', ',');
     knoten['korr-notiz'].value = '';
+    korrBremseBis = 0;
     korrekturInfo();
   }
 
+  knoten['korr-auf'].addEventListener('click', () => {
+    knoten['korr-auf'].hidden = true;
+    knoten['form-korrektur'].hidden = false;
+    knoten['korr-betrag'].focus();
+    knoten['korr-betrag'].select();
+  });
   knoten['korr-betrag'].addEventListener('input', korrekturInfo);
+
   knoten['form-korrektur'].addEventListener('submit', async e => {
     e.preventDefault();
     const neu = korrekturWert();
@@ -3280,13 +3354,21 @@ if (istBrowser) {
     }
     const diff = neu - state.saldo;
     if (diff === 0) return toast('Das ist schon dein Kontostand.');
-    if (!await frage('Kontostand von ' + eur(state.saldo) + ' auf ' + eur(neu) + ' setzen? Die Korrektur von ' +
-      (diff > 0 ? '+' : '−') + eur(Math.abs(diff)) + ' steht danach im Verlauf.', 'Korrigieren')) return;
-    const r = saldoKorrigieren(neu, knoten['korr-notiz'].value);
+    // Die Bremse gilt auch für die Enter-Taste
+    if (!korrBremseBis || Date.now() < korrBremseBis) return korrekturInfo();
+    const grund = knoten['korr-notiz'].value.trim();
+    if (grund.length < KORREKTUR_GRUND_MIN) {
+      toast('Bitte kurz angeben, warum der Stand nicht stimmt.', 'warn');
+      return knoten['korr-notiz'].focus();
+    }
+    if (!await frage('Kontostand von ' + eur(state.saldo) + ' auf ' + eur(neu) + ' setzen (' + vorzeichen(diff) +
+      ')?\n\nGrund: ' + grund + '\n\nDie Korrektur steht danach im Verlauf und lässt sich nicht löschen.', 'Korrigieren')) return;
+    const r = saldoKorrigieren(neu, grund);
     if (!r.ok) return toast(r.fehler, 'warn');
     rendAlle();
     overlaySchliessen();
-    toast('Kontostand ist jetzt ' + eur(r.saldo) + '.', 'ok');
+    toast('Kontostand ' + vorzeichen(r.differenz) + ' korrigiert: jetzt ' + eur(r.saldo) +
+      ', frei ' + eur(freiVerfuegbar()) + '.', 'ok');
   });
 
   knoten['reset-knopf'].addEventListener('click', async () => {

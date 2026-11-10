@@ -81,7 +81,10 @@ prüfen, dass UI und HTML zueinander passen.
   - [x] **Kontostand korrigieren** (Einstellungen): `saldoKorrigieren()` setzt
         den Stand und bucht den Unterschied als eigene Art `'korrektur'`
         (`plus: true` = nach oben). Zählt weder als Ausgabe noch als
-        Einzahlung noch in die Musteranzeige.
+        Einzahlung noch in die Musteranzeige. **Mit Absicht umständlich**:
+        erst aufklappen, Grund ist Pflicht, die Folgen (frei verfügbar,
+        Tagesbudget vorher → nachher, bisherige Korrekturen des Monats)
+        stehen da, 10 Sekunden Bremse, dann Rückfrage.
   - [x] Einstellungen: Farbschema, Backup exportieren / importieren, Reset
   - [x] Toasts statt `alert()`
   - [x] **Farbschema System / Hell / Dunkel**. Ohne Wahl folgt die App dem
@@ -91,7 +94,7 @@ prüfen, dass UI und HTML zueinander passen.
         Inline-Skript im `<head>` setzt das Attribut vor dem ersten Zeichnen,
         sonst blitzt das falsche Schema auf.
 - [x] **Offline/PWA**: `manifest.json` (verlinkt!) + Service Worker (`sw.js`, Cache
-      `inneedmoney-v12`): Navigation und Assets „Netz zuerst, Cache als Rückfall",
+      `inneedmoney-v13`): Navigation und Assets „Netz zuerst, Cache als Rückfall",
       damit HTML, CSS und JS nach einem Deploy zusammenpassen. Alle Assets lokal.
 - [x] **Sprache**: UI auf Deutsch.
 - [x] **Design**: flache, ruhige Oberfläche in Dunkel und Hell mit Gold als

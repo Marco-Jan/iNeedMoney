@@ -523,14 +523,16 @@
         </div>
 
         <h3 class="unter-titel">Kontostand korrigieren</h3>
-        <form id="form-korrektur" novalidate>
-          <p class="fussnote oben">Stimmt die App nicht mehr mit deinem echten Konto &uuml;berein? Trag hier den richtigen Stand ein.</p>
+        <p class="fussnote oben">Nur f&uuml;r den Fall, dass die App nicht mehr mit deinem echten Konto &uuml;bereinstimmt. Jede Korrektur steht mit Grund im Verlauf.</p>
+        <button type="button" id="korr-auf" class="knopf">Kontostand stimmt nicht &hellip;</button>
+        <form id="form-korrektur" novalidate hidden>
+          <p class="fussnote" id="korr-info"></p>
           <label for="korr-betrag">Richtiger Kontostand in Euro</label>
           <input type="text" inputmode="decimal" id="korr-betrag" autocomplete="off" placeholder="0,00">
-          <label for="korr-notiz">Grund (optional)</label>
+          <label for="korr-notiz">Warum stimmt der Stand nicht? (Pflicht)</label>
           <input type="text" id="korr-notiz" autocomplete="off" placeholder="z.&nbsp;B. Buchung vergessen">
-          <p class="fussnote" id="korr-info"></p>
-          <button type="submit" class="knopf">Kontostand korrigieren</button>
+          <div class="warnung" id="korr-folgen" role="status" hidden></div>
+          <button type="submit" class="knopf" id="korr-submit" disabled>Kontostand korrigieren</button>
         </form>
 
         <h3 class="unter-titel">Backup</h3>

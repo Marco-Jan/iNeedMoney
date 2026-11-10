@@ -1417,6 +1417,10 @@ select:focus-visible,
 
 /* ------------------------------------------------ Grundbedarf & Sofortkauf */
 
+#form-korrektur .warnung {
+  margin-bottom: 1rem;
+}
+
 /* Ankreuzfeld mit Text daneben - gross genug fuer den Daumen */
 .haken {
   display: flex;

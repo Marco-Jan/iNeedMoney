@@ -977,11 +977,15 @@ assert(!L.saldoKorrigieren(50000).ok, 'derselbe Stand ist keine Korrektur');
   const tk = L.state.transaktionen[0];
   assert(tk.typ === 'korrektur' && tk.betrag === 2650 && !tk.plus && tk.name === 'Buchung vergessen',
     'die Korrektur steht mit Betrag und Grund im Verlauf');
-  const hoch = L.saldoKorrigieren(48000);
+  assert(!L.saldoKorrigieren(48000).ok && !L.saldoKorrigieren(48000, ' x ').ok && L.state.saldo === 47350,
+    'ohne Grund wird nicht korrigiert');
+  const hoch = L.saldoKorrigieren(48000, 'Erstattung vergessen');
   assert(hoch.ok && hoch.differenz === 650 && L.state.transaktionen[0].plus === true, 'nach oben korrigiert: als Plus vermerkt');
   assert(L.monatsBilanz().ausgaben === 0 && L.monatsBilanz().einzahlungen === 50000 && L.monatsMuster().anzahl === 0,
     'eine Korrektur ist weder Ausgabe noch Einzahlung noch Impulskauf');
-  assert(L.saldoKorrigieren(-1200).ok && L.state.saldo === -1200, 'auch ein ueberzogenes Konto laesst sich eintragen');
+  const km = L.korrekturenImMonat();
+  assert(km.anzahl === 2 && km.netto === -2000, 'die Korrekturen des Monats werden gezaehlt: 2, netto -20 Euro');
+  assert(L.saldoKorrigieren(-1200, 'Konto ueberzogen').ok && L.state.saldo === -1200, 'auch ein ueberzogenes Konto laesst sich eintragen');
   assert(gespeichert().saldo === -1200, 'der korrigierte Stand ist persistiert');
   const kopieK = L.exportDaten();
   L.zuruecksetzen();
@@ -989,6 +993,9 @@ assert(!L.saldoKorrigieren(50000).ok, 'derselbe Stand ist keine Korrektur');
     L.state.transaktionen.some(x => x.typ === 'korrektur' && x.plus === true), 'Korrekturen ueberleben das Backup');
 }
 assert(htmlIds.has('form-korrektur') && htmlIds.has('korr-betrag') && htmlIds.has('korr-info'), 'das Korrektur-Formular steht im HTML');
+assert(/<form id="form-korrektur" novalidate hidden>/.test(indexHtml) && /id="korr-submit" disabled/.test(indexHtml),
+  'das Formular ist erst zugeklappt und der Knopf gesperrt');
+assert(/korrBremseBis/.test(appJs) && /Date\.now\(\) < korrBremseBis/.test(appJs), 'die Bremse gilt auch fuer die Enter-Taste');
 
 block('Eigener Barcode-Leser: EAN-13 und EAN-8 aus einer Bildzeile');
 {
