@@ -121,7 +121,7 @@ prüfen, dass UI und HTML zueinander passen.
         Inline-Skript im `<head>` setzt das Attribut vor dem ersten Zeichnen,
         sonst blitzt das falsche Schema auf.
 - [x] **Offline/PWA**: `manifest.json` (verlinkt!) + Service Worker (`sw.js`, Cache
-      `inneedmoney-v15`): Navigation und Assets „Netz zuerst, Cache als Rückfall",
+      `inneedmoney-v16`): Navigation und Assets „Netz zuerst, Cache als Rückfall",
       damit HTML, CSS und JS nach einem Deploy zusammenpassen. Alle Assets lokal.
 - [x] **Sprache**: UI auf Deutsch.
 - [x] **Design**: flache, ruhige Oberfläche in Dunkel und Hell mit Gold als

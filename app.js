@@ -3755,7 +3755,7 @@ if (istBrowser) {
     const hatteWaechter = !!navigator.serviceWorker.controller;
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (!hatteWaechter) return;
-      toast('Neue Version von iNeedMoney ist da.', 'ok',
+      toast('Neue Version ist da.', 'ok',
         { label: 'Neu laden', bleibt: true, tun: () => location.reload() });
     });
     navigator.serviceWorker.register('sw.js')

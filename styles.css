@@ -1287,37 +1287,62 @@ input[type="text"].inline-preis {
 
 /* ----------------------------------------------------------------- Toast */
 
+/*
+  Die Meldung spannt sich zwischen beide Ränder (left + right) und wird über
+  margin zentriert. Mit left: 50% + translate bekäme sie nur die halbe
+  Bildschirmbreite und bräche am Handy schon bei kurzen Sätzen um.
+*/
 .toast {
   position: fixed;
-  left: 50%;
-  bottom: calc(var(--leisten-hoehe) + 1rem + env(safe-area-inset-bottom));
-  transform: translateX(-50%);
-  max-width: calc(100% - 2rem);
-  padding: 0.75rem 1.2rem;
+  left: 0.75rem;
+  right: 0.75rem;
+  bottom: calc(var(--leisten-hoehe) + 0.75rem + env(safe-area-inset-bottom));
+  width: fit-content;
+  min-width: min(18rem, calc(100% - 1.5rem));
+  max-width: 30rem;
+  margin-inline: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.9rem;
+  min-height: 3.25rem;
+  padding: 0.8rem 1.1rem;
   border: 1px solid var(--rand);
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: var(--flaeche-3);
   color: var(--text);
-  font-size: 0.875rem;
+  font-size: 0.95rem;
+  line-height: 1.35;
   box-shadow: var(--schatten);
   z-index: 200;
   cursor: pointer;
-  animation: hochschieben 0.22s ease;
+  animation: toast-rein 0.22s ease;
+}
+
+.toast[hidden] {
+  display: none;
+}
+
+@keyframes toast-rein {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
 }
 
 .toast-ok { border-color: var(--akzent-text); }
 
 /* Knopf in der Meldung: „Rückgängig“, „Neu laden“ */
 .toast-knopf {
-  margin-left: 0.75rem;
-  padding: 0.25rem 0.1rem;
-  border: 0;
+  flex: none;
+  margin: -0.3rem -0.4rem -0.3rem 0;
+  padding: 0.55rem 0.9rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
   background: none;
   color: var(--akzent-text);
   font: inherit;
+  font-size: 0.875rem;
   font-weight: 700;
-  text-decoration: underline;
-  text-underline-offset: 0.2em;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -1339,11 +1364,6 @@ input[type="text"].inline-preis {
   font-weight: 600;
 }
 .toast-warn { border-color: var(--warn); color: var(--warn-text); background: var(--warn-flaeche); }
-
-@keyframes hochschieben {
-  from { opacity: 0; transform: translate(-50%, 12px); }
-  to { opacity: 1; transform: translate(-50%, 0); }
-}
 
 /* ------------------------------------------------------------- Kleinzeug */
 
