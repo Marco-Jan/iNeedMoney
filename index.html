@@ -64,6 +64,21 @@
         </button>
       </div>
 
+      <section class="block" aria-labelledby="wunsch-titel">
+        <div class="block-kopf">
+          <h2 id="wunsch-titel">Geparkte W&uuml;nsche</h2>
+        </div>
+        <div class="card">
+          <ul id="wunsch-liste" class="liste"></ul>
+          <p class="leer" id="wunsch-leer" hidden>Nichts geparkt. Wenn dich etwas reizt: erst parken, in 48&nbsp;Stunden entscheiden. Abgebucht wird dabei nichts.</p>
+          <button class="knopf wunsch-knopf" type="button" data-oeffnet="wunsch">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+            Will ich haben &ndash; erst parken
+          </button>
+        </div>
+        <p class="fussnote oben" id="wunsch-bilanz"></p>
+      </section>
+
       <!-- Sparziel: eigener Topf, das Geld darin ist nicht mehr "frei verfuegbar" -->
       <section class="block" aria-labelledby="sparziel-titel">
         <div class="block-kopf">
@@ -86,21 +101,6 @@
           <p class="leer">Noch kein Sparziel. Was du zur&uuml;cklegst, verschwindet aus &bdquo;frei verf&uuml;gbar&ldquo; und w&auml;chst auf dein Ziel zu.</p>
           <button class="knopf" type="button" data-oeffnet="sparziel">Sparziel anlegen</button>
         </div>
-      </section>
-
-      <section class="block" aria-labelledby="wunsch-titel">
-        <div class="block-kopf">
-          <h2 id="wunsch-titel">Geparkte W&uuml;nsche</h2>
-        </div>
-        <div class="card">
-          <ul id="wunsch-liste" class="liste"></ul>
-          <p class="leer" id="wunsch-leer" hidden>Nichts geparkt. Wenn dich etwas reizt: erst parken, in 48&nbsp;Stunden entscheiden. Abgebucht wird dabei nichts.</p>
-          <button class="knopf wunsch-knopf" type="button" data-oeffnet="wunsch">
-            <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-            Will ich haben &ndash; erst parken
-          </button>
-        </div>
-        <p class="fussnote oben" id="wunsch-bilanz"></p>
       </section>
 
       <div class="card monat-grid" aria-label="Dieser Monat">
