@@ -1463,6 +1463,26 @@ select:focus-visible,
   margin-top: 0.3rem;
 }
 
+/* Erinnerung ans Parken im Ausgabe-Blatt, direkt ueber dem Park-Knopf */
+.park-hinweis {
+  margin: 0.9rem 0 0.5rem;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  font-weight: 600;
+  color: var(--akzent-text);
+}
+
+.park-hinweis:empty {
+  display: none;
+}
+
+/* Der Park-Knopf sitzt in der Wunsch-Karte, direkt bei der Erklaerung */
+.wunsch-knopf {
+  width: 100%;
+  margin: 0.5rem 0 0.75rem;
+  color: var(--akzent-text);
+}
+
 .budget-fuss:empty {
   display: none;
 }

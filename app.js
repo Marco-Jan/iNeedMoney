@@ -108,6 +108,8 @@ function postenNormalisieren(p, abgegriffen) {
     tag,
     start: /^\d{4}-\d{2}-\d{2}$/.test(String(p.start)) ? String(p.start) : null,
   };
+  // Fester Eingang (z. B. Gehalt): wird gutgeschrieben statt abgezogen
+  if (p.eingang === true) neu.eingang = true;
 
   if (Number.isFinite(p.naechster) && neu.start) {
     // Schon im neuen Schema
@@ -144,7 +146,7 @@ function normalisiere(roh) {
         betrag: zahl(t.betrag),
         datum: String(t.datum || heuteISO()),
         name: String(t.name || ''),
-        ...(t.art === 'einkauf' || t.art === 'wunsch' ? { art: t.art } : {}),
+        ...(t.art === 'einkauf' || t.art === 'wunsch' || t.art === 'eingang' ? { art: t.art } : {}),
         ...(t.gewarnt === true ? { gewarnt: true } : {}),
         ...(t.typ === 'korrektur' && t.plus === true ? { plus: true } : {}),
       })) : [],
@@ -382,6 +384,12 @@ function offeneTermine() {
   if (morgen > monatsEnde) return [];
   const raus = [];
   for (const p of state.posten) {
+    /*
+      Feste Eingänge sind nichts, wofür Geld reserviert werden muss - und Geld,
+      das erst noch kommt, zählt bewusst nicht als frei. Es wird erst mit dem
+      Buchen Teil des Kontos.
+    */
+    if (p.eingang) continue;
     // Nur was noch nicht gebucht ist - sonst zaehlt ein bereits abgezogener
     // Termin weiter als "offen" und die Ansichten widersprechen sich.
     raus.push(...termineImZeitraum(p, morgen, monatsEnde).filter(t => t.index >= p.naechster));
@@ -452,19 +460,33 @@ function budgetTageText(betrag) {
   dem ist das Geld trotzdem abgebucht worden. Jeder Abzug wird mit seinem
   echten Termin in die Historie geschrieben, nicht mit dem heutigen Datum.
 */
+// Wie viele der zuletzt von abrechnen() gebuchten Termine feste Eingänge waren
+let letzteEingaenge = 0;
+
 function abrechnen() {
   const jetzt = new Date();
   const bis = new Date(jetzt.getFullYear(), jetzt.getMonth(), jetzt.getDate());
   let gebucht = 0;
+  letzteEingaenge = 0;
   for (const p of state.posten) {
     for (let i = 0; i < 400; i++) {
       const termin = terminFuerIndex(p, p.naechster);
       if (termin > bis) break;
-      state.saldo -= p.betrag;
-      state.transaktionen.unshift({
-        id: neueId(), typ: 'posten', betrag: p.betrag,
-        datum: isoVon(termin), name: p.name,
-      });
+      if (p.eingang) {
+        // Fester Eingang: gutschreiben, als Einzahlung mit Herkunft im Verlauf
+        state.saldo += p.betrag;
+        state.transaktionen.unshift({
+          id: neueId(), typ: 'einzahlung', betrag: p.betrag,
+          datum: isoVon(termin), name: p.name, art: 'eingang',
+        });
+        letzteEingaenge++;
+      } else {
+        state.saldo -= p.betrag;
+        state.transaktionen.unshift({
+          id: neueId(), typ: 'posten', betrag: p.betrag,
+          datum: isoVon(termin), name: p.name,
+        });
+      }
       p.naechster++;
       gebucht++;
     }
@@ -497,7 +519,7 @@ function buchungZuruecknehmen(id) {
   const t = state.transaktionen[i];
   if (t.datum !== heuteISO()) return { ok: false, fehler: 'Nur Buchungen von heute lassen sich zurücknehmen.' };
   if (t.typ === 'ausgabe' && !t.art) state.saldo += t.betrag;
-  else if (t.typ === 'einzahlung') state.saldo -= t.betrag;
+  else if (t.typ === 'einzahlung' && !t.art) state.saldo -= t.betrag;
   else return { ok: false, fehler: 'Diese Buchung lässt sich nicht zurücknehmen.' };
   state.transaktionen.splice(i, 1);
   speichere();
@@ -634,6 +656,22 @@ function pruefeAusgabe(betrag, grundbedarf) {
     texte.unshift('Neben ' + eur(gedeckt) + ' Grundbedarf sind es ' + eur(rest) + ' für anderes.');
   }
   return { ok: true, warnung: texte.length ? texte.join(' ') : null, gruende, grundbedarf: gedeckt };
+}
+
+/*
+  Erinnerung ans Parken: schon ab mehr als einem Tagesbudget, also deutlich
+  vor der Warnung. Kein vierter Warngrund und keine Bremse - nur der Hinweis,
+  dass man eine spontane Ausgabe nicht jetzt entscheiden muss.
+*/
+const PARK_HINWEIS_TAGE = 1;
+
+function parkHinweis(betrag) {
+  if (!Number.isFinite(betrag) || betrag <= 0) return null;
+  const budget = tagesbudget();
+  const schluss = ' Du musst das nicht jetzt entscheiden: parken und in ' + ABKUEHL_STUNDEN + ' Stunden noch einmal schauen.';
+  if (budget <= 0) return 'Du hast gerade nichts frei.' + schluss;
+  if (betrag <= budget * PARK_HINWEIS_TAGE) return null;
+  return 'Das ist mehr als dein Tagesbudget (' + eur(budget) + ').' + schluss;
 }
 
 function ausgeben(betrag, notiz, art, grundbedarf) {
@@ -908,7 +946,7 @@ function ersterMonatsTermin(tag) {
     effektiverTag(tag, jetzt.getFullYear(), jetzt.getMonth())));
 }
 
-function postenSpeichern({ id, name, betrag, rhythmus, intervall, tag, start }) {
+function postenSpeichern({ id, name, betrag, rhythmus, intervall, tag, start, eingang }) {
   if (!name) return { ok: false, fehler: 'Bitte einen Namen eingeben.' };
   if (!Number.isFinite(betrag) || betrag <= 0) return { ok: false, fehler: 'Bitte einen Betrag größer als 0 eingeben.' };
 
@@ -941,15 +979,36 @@ function postenSpeichern({ id, name, betrag, rhythmus, intervall, tag, start }) 
       Betrag rückwirkend die ganze Vergangenheit nach.
     */
     Object.assign(vorhanden, neu);
+    if (eingang === true) vorhanden.eingang = true; else delete vorhanden.eingang;
     const jetzt = new Date();
     vorhanden.naechster = indexAb(vorhanden,
       new Date(jetzt.getFullYear(), jetzt.getMonth(), jetzt.getDate() + 1));
   } else {
-    state.posten.push(Object.assign({ id: neueId(), naechster: 0 }, neu));
+    state.posten.push(Object.assign({ id: neueId(), naechster: 0 }, neu, eingang === true ? { eingang: true } : {}));
   }
   speichere();
   abrechnen(); // falls der erste Termin schon erreicht ist
-  return { ok: true, bearbeitet: Boolean(id) };
+  return { ok: true, bearbeitet: Boolean(id), eingang: eingang === true };
+}
+
+/*
+  Vorschläge fürs Notizfeld: was schon öfter eingetragen wurde, das Häufigste
+  zuerst. Nur von Hand erfasste Buchungen - Einkäufe, gekaufte Wünsche und
+  feste Eingänge haben ihren Namen nicht aus dem Notizfeld. `betrag` ist der
+  zuletzt gebuchte Betrag unter diesem Namen.
+*/
+function notizVorschlaege(typ, anzahl) {
+  const gruppen = new Map();
+  for (const t of state.transaktionen) {   // neueste zuerst
+    if (t.typ !== typ || t.art) continue;
+    const name = String(t.name || '').trim();
+    if (!name) continue;
+    const g = gruppen.get(name.toLowerCase());
+    if (g) g.anzahl++;
+    else gruppen.set(name.toLowerCase(), { name, betrag: t.betrag, anzahl: 1 });
+  }
+  // sort() ist stabil: bei gleicher Häufigkeit bleibt das Neuere vorn
+  return [...gruppen.values()].sort((a, b) => b.anzahl - a.anzahl).slice(0, anzahl || 8);
 }
 
 // Wiederholung als Text, z. B. "alle 4 Wochen" oder "monatlich am 28."
@@ -1551,7 +1610,7 @@ if (typeof globalThis !== 'undefined') {
     vorratAendern, nachkaufen, preisUrteil, preisErfassen, artikelNachName,
     einkaufHinzu, einkaufAendern, einkaufEntfernen, einkaufLeeren,
     einkaufSumme, einkaufBudget, einkaufAbschliessen, einkaufAusVorrat,
-    BUDGET_TAGE_WARNUNG, ABKUEHL_STUNDEN,
+    BUDGET_TAGE_WARNUNG, ABKUEHL_STUNDEN, PARK_HINWEIS_TAGE, parkHinweis, notizVorschlaege,
     restTage, freiVerfuegbar, tagesbudget, budgetTageText,
     wunschSpeichern, wunschRestStunden, wunschReif, offeneWuensche,
     wunschVerwerfen, wunschKaufen, wunschBilanz, monatsMuster,
@@ -1584,7 +1643,8 @@ if (istBrowser) {
     'form-ausgabe', 'aus-betrag', 'aus-notiz', 'ausgabe-warnung', 'ausgabe-schwelle',
     'aus-danach', 'aus-balken', 'aus-submit',
     'form-posten', 'post-id', 'post-name', 'post-betrag', 'post-tag', 'post-submit', 'post-abbrechen',
-    'post-intervall', 'post-einheit', 'post-tag-feld', 'post-start-feld', 'post-start', 'post-vorschau',
+    'post-intervall', 'post-einheit', 'post-tag-feld', 'post-start-feld', 'post-start', 'post-vorschau', 'post-eingang',
+    'ein-regel', 'aus-vorschlaege', 'ein-vorschlaege',
     'posten-liste', 'posten-liste-leer', 'kal-prev', 'kal-next', 'kal-monat', 'kal-grid', 'kal-offen',
     'kal-liste', 'kal-liste-leer', 'kal-titel', 'kal-alle',
     'ausgaben-liste', 'ausgaben-leer', 'ausgaben-summe', 'verlauf-filter',
@@ -1592,7 +1652,7 @@ if (istBrowser) {
     'seg-einkauf', 'einkauf-budget', 'einkauf-warnung', 'form-einkauf', 'ek-name', 'ek-scan', 'ek-vorschlaege',
     'ek-menge', 'ek-preis', 'ek-urteil', 'ek-aus-vorrat', 'einkauf-liste', 'einkauf-leer',
     'einkauf-summe', 'ek-echt', 'ek-laden', 'ek-buchen', 'ek-leeren', 'ek-fuss', 'ek-buchen-summe',
-    'tagesbudget', 'aus-budget', 'aus-parken', 'muster', 'install-bereich', 'install-einst',
+    'tagesbudget', 'aus-budget', 'aus-parken', 'aus-parkhinweis', 'muster', 'install-bereich', 'install-einst',
     'stichtag-hinweis', 'backup-hinweis', 'backup-stand', 'serie', 'aus-serie', 'stichtag-wahl', 'stichtag-fix-feld', 'stichtag-tag', 'stichtag-datum-feld',
     'stichtag-datum', 'stichtag-speichern', 'stichtag-info',
     'form-korrektur', 'korr-betrag', 'korr-notiz', 'korr-info', 'korr-auf', 'korr-submit', 'korr-folgen',
@@ -1941,8 +2001,9 @@ if (istBrowser) {
     ul.innerHTML = '';
     const termine = kommendeTermine(3);
     for (const t of termine) {
-      ul.appendChild(terminZeile(t.datum, t.posten.name, eur(t.posten.betrag), null,
-        inTagenText(t.datum) + ' · ' + rhythmusText(t.posten)));
+      const ein = !!t.posten.eingang;
+      ul.appendChild(terminZeile(t.datum, t.posten.name, (ein ? '+' : '') + eur(t.posten.betrag), ein ? 'plus' : null,
+        inTagenText(t.datum) + ' · ' + (ein ? 'Eingang · ' : '') + rhythmusText(t.posten)));
     }
     knoten['posten-uebersicht-leer'].hidden = termine.length > 0;
     knoten['posten-uebersicht-leer'].textContent = state.posten.length
@@ -1956,8 +2017,8 @@ if (istBrowser) {
     const posten = state.posten.slice()
       .sort((a, b) => naechsterTermin(a) - naechsterTermin(b));
     for (const p of posten) {
-      const li = zeile(p.name, eur(p.betrag), null,
-        rhythmusText(p) + ' · nächster ' + datumHuebsch(isoVon(naechsterTermin(p))));
+      const li = zeile(p.name, (p.eingang ? '+' : '') + eur(p.betrag), p.eingang ? 'plus' : null,
+        (p.eingang ? 'Eingang · ' : '') + rhythmusText(p) + ' · nächster ' + datumHuebsch(isoVon(naechsterTermin(p))));
       const aktionen = document.createElement('span');
       aktionen.className = 'aktionen';
 
@@ -1974,10 +2035,11 @@ if (istBrowser) {
       loeschen.textContent = 'Löschen';
       loeschen.setAttribute('aria-label', 'Löschen – ' + p.name);
       loeschen.addEventListener('click', async () => {
-        if (!await frage('Posten „' + p.name + '“ wirklich löschen?', 'Löschen')) return;
+        const wort = p.eingang ? 'Eingang' : 'Posten';
+        if (!await frage(wort + ' „' + p.name + '“ wirklich löschen?', 'Löschen')) return;
         postenLoeschen(p.id);
         rendAlle();
-        toast('Posten gelöscht.');
+        toast(wort + ' gelöscht.');
       });
 
       aktionen.append(bearbeiten, loeschen);
@@ -2009,7 +2071,8 @@ if (istBrowser) {
       }
       const art = { posten: 'Posten', einzahlung: 'Einzahlung', sparen: 'in den Spartopf', entnahme: 'aus dem Spartopf', korrektur: 'Korrektur' }[t.typ] || 'Ausgabe';
       const plus = t.typ === 'einzahlung' || t.typ === 'entnahme' || (t.typ === 'korrektur' && t.plus === true);
-      const herkunft = t.art === 'einkauf' ? 'Einkauf' : t.art === 'wunsch' ? 'geparkter Wunsch' : art;
+      const herkunft = t.art === 'einkauf' ? 'Einkauf' : t.art === 'wunsch' ? 'geparkter Wunsch'
+        : t.art === 'eingang' ? 'fester Eingang' : art;
       ul.appendChild(zeile(t.name || art, (plus ? '+' : '−') + eur(t.betrag), plus ? 'plus' : 'minus',
         herkunft + (t.gewarnt ? ' · trotz Warnung' : '')));
     }
@@ -2138,11 +2201,13 @@ if (istBrowser) {
     liste.innerHTML = '';
     for (const t of gezeigt) {
       const bezahlt = istBezahlt(t);
-      const li = terminZeile(t.datum, t.posten.name, eur(t.posten.betrag), bezahlt ? 'bezahlt' : null,
-        rhythmusText(t.posten));
+      const ein = !!t.posten.eingang;
+      const li = terminZeile(t.datum, t.posten.name, (ein ? '+' : '') + eur(t.posten.betrag),
+        bezahlt ? 'bezahlt' : (ein ? 'plus' : null),
+        (ein ? 'Eingang · ' : '') + rhythmusText(t.posten));
       const marke = document.createElement('span');
       marke.className = 'marke ' + (bezahlt ? 'marke-ok' : 'marke-offen');
-      marke.textContent = bezahlt ? 'bezahlt' : 'offen';
+      marke.textContent = ein ? (bezahlt ? 'gebucht' : 'erwartet') : (bezahlt ? 'bezahlt' : 'offen');
       li.appendChild(marke);
       liste.appendChild(li);
     }
@@ -2157,7 +2222,7 @@ if (istBrowser) {
     const offenSumme = summeOffen();
     knoten['kal-offen'].textContent = istAktuell
       ? (offenSumme ? 'Noch offen ' + eur(offenSumme) : 'Nichts mehr offen')
-      : 'Summe ' + eur(termine.reduce((x, t) => x + t.posten.betrag, 0));
+      : 'Summe ' + eur(termine.reduce((x, t) => x + (t.posten.eingang ? 0 : t.posten.betrag), 0));
   }
 
   knoten['kal-alle'].addEventListener('click', () => {
@@ -2211,6 +2276,9 @@ if (istBrowser) {
 
     // ... und gegen das Sparziel stellen
     knoten['aus-ziel'].textContent = (gueltig && sparzielVergleich(betrag)) || '';
+
+    // Ab einem Tagesbudget: ans Parken erinnern, direkt über dem Park-Knopf
+    knoten['aus-parkhinweis'].textContent = (gueltig && pruefung.ok && parkHinweis(betrag)) || '';
 
     bremseSetzen(!!pruefung && pruefung.ok && !!pruefung.warnung);
 
@@ -2286,6 +2354,7 @@ if (istBrowser) {
     rendEinkauf();
     rendVorrat();
     rendEkUrteil();
+    rendNotizVorschlaege();
   }
 
   // ------------------------------------------- Einkauf, Vorrat & Barcode (UI)
@@ -3054,8 +3123,12 @@ if (istBrowser) {
     einstellungen: 'Einstellungen',
   };
 
+  // Wurde im offenen Blatt schon etwas eingegeben?
+  let overlayGetippt = false;
+
   function overlayOeffnen(name, titel) {
     const overlay = knoten['overlay'];
+    overlayGetippt = false;
     knoten['overlay-titel'].textContent = titel || OVERLAY_TITEL[name] || '';
     for (const body of overlay.querySelectorAll('.overlay-body')) {
       body.hidden = body.getAttribute('data-body') !== name;
@@ -3082,6 +3155,7 @@ if (istBrowser) {
     // weiterlaufen und die Kamera belegen.
     if (!knoten['scanner'].hidden) scannerSchliessen();
     knoten['overlay'].hidden = true;
+    overlayGetippt = false;
     document.body.classList.remove('fixiert');
     // Beim nächsten Öffnen soll kein halb getippter Betrag mehr dastehen
     knoten['form-einzahlung'].reset();
@@ -3101,8 +3175,25 @@ if (istBrowser) {
     k.addEventListener('click', () => overlayOeffnen(k.getAttribute('data-oeffnet')));
   }
   knoten['overlay-schliessen'].addEventListener('click', overlaySchliessen);
+  /*
+    Ein Tipp neben das Blatt schließt es - aber nicht, wenn schon etwas
+    eingetippt ist. Schließen leert die Formulare, und ein verrutschter Daumen
+    soll keine Eingabe kosten. Das Kreuz schließt weiterhin immer.
+  */
+  knoten['overlay'].addEventListener('input', () => { overlayGetippt = true; });
+  /*
+    Wer Text mit der Maus markiert und dabei über den Rand des Blatts zieht,
+    löst einen Klick auf dem Hintergrund aus. Deshalb zählt nur ein Klick,
+    der auch auf dem Hintergrund begonnen hat.
+  */
+  let druckAufHintergrund = false;
+  knoten['overlay'].addEventListener('pointerdown', e => {
+    druckAufHintergrund = e.target === e.currentTarget;
+  });
   knoten['overlay'].addEventListener('click', e => {
-    if (e.target === e.currentTarget) overlaySchliessen();
+    const gemeint = druckAufHintergrund;
+    druckAufHintergrund = false;
+    if (e.target === e.currentTarget && gemeint && !overlayGetippt) overlaySchliessen();
   });
   document.addEventListener('keydown', e => {
     if (e.key !== 'Escape') return;
@@ -3460,6 +3551,7 @@ if (istBrowser) {
     knoten['post-intervall'].value = p.intervall;
     knoten['post-tag'].value = p.tag;
     knoten['post-start'].value = p.start;
+    knoten['post-eingang'].checked = !!p.eingang;
     rhythmusFelderUmschalten();
     knoten['post-submit'].textContent = 'Änderung speichern';
   }
@@ -3486,11 +3578,58 @@ if (istBrowser) {
       intervall: parseInt(knoten['post-intervall'].value, 10),
       tag: parseInt(knoten['post-tag'].value, 10),
       start: istWoche ? knoten['post-start'].value : null,
+      eingang: knoten['post-eingang'].checked,
     });
     if (!r.ok) return toast(r.fehler, 'warn');
     rendAlle();
     overlaySchliessen();
-    toast(r.bearbeitet ? 'Posten geändert.' : 'Posten angelegt.', 'ok');
+    toast((r.eingang ? 'Eingang' : 'Posten') + (r.bearbeitet ? ' geändert.' : ' angelegt.'), 'ok');
+  });
+
+  /*
+    Aus dem Einzahlen-Blatt heraus einen festen Eingang anlegen: Betrag und
+    Notiz wandern mit ins Posten-Formular, dort fehlt nur noch der Tag.
+    Gebucht wird dabei nichts.
+  */
+  knoten['ein-regel'].addEventListener('click', () => {
+    const betrag = knoten['ein-betrag'].value;
+    const name = knoten['ein-notiz'].value.trim();
+    knoten['form-einzahlung'].reset();
+    rendEinzahlungLive();
+    postenFormularLeeren();
+    overlayOeffnen('posten', 'Fester Eingang');
+    knoten['post-name'].value = name;
+    knoten['post-betrag'].value = betrag;
+    knoten['post-eingang'].checked = true;
+  });
+
+  // ------------------------------------------------- Vorschläge beim Tippen
+
+  // Die Listen hinter „Wofür?“ und „Notiz“ aus dem Verlauf füllen
+  function rendNotizVorschlaege() {
+    for (const [id, typ] of [['aus-vorschlaege', 'ausgabe'], ['ein-vorschlaege', 'einzahlung']]) {
+      const liste = knoten[id];
+      liste.innerHTML = '';
+      for (const v of notizVorschlaege(typ)) {
+        const o = document.createElement('option');
+        o.value = v.name;
+        liste.appendChild(o);
+      }
+    }
+  }
+
+  /*
+    Bei einer Einzahlung den üblichen Betrag gleich mit eintragen, solange
+    noch keiner dasteht. Bei Ausgaben bewusst nicht: den Betrag selbst zu
+    tippen gehört dort zur Bremse.
+  */
+  knoten['ein-notiz'].addEventListener('input', () => {
+    if (knoten['ein-betrag'].value.trim()) return;
+    const text = knoten['ein-notiz'].value.trim().toLowerCase();
+    const treffer = notizVorschlaege('einzahlung').find(v => v.name.toLowerCase() === text);
+    if (!treffer) return;
+    knoten['ein-betrag'].value = (treffer.betrag / 100).toFixed(2).replace('.', ',');
+    rendEinzahlungLive();
   });
 
   knoten['kal-prev'].addEventListener('click', () => kalVerschieben(-1));
@@ -3717,7 +3856,10 @@ if (istBrowser) {
   function startMeldung(gebucht) {
     const reif = offeneWuensche().filter(w => wunschReif(w)).length;
     const teile = [];
-    if (gebucht) teile.push(gebucht + (gebucht === 1 ? ' fälliger Posten' : ' fällige Posten') + ' abgezogen');
+    const eingaenge = gebucht ? letzteEingaenge : 0;
+    const abzuege = (gebucht || 0) - eingaenge;
+    if (abzuege) teile.push(abzuege + (abzuege === 1 ? ' fälliger Posten' : ' fällige Posten') + ' abgezogen');
+    if (eingaenge) teile.push(eingaenge + (eingaenge === 1 ? ' fester Eingang' : ' feste Eingänge') + ' gebucht');
     if (reif) teile.push(reif + (reif === 1 ? ' Wunsch wartet' : ' Wünsche warten') + ' auf deine Entscheidung');
     if (teile.length) toast(teile.join(' · ') + '.');
   }

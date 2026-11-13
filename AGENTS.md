@@ -4,7 +4,9 @@
 iNeedMoney: persönliche Spar-App. Features (vom Nutzer gefordert):
 - **Konto**: zentrales Saldo, von dem abgezogen wird
 - **Posten**: wiederkehrende monatliche Abzüge (Betrag + Tag im Monat, z. B. 56 € Strom am 28.), im Kalender sichtbar
+- **Fester Eingang**: ein Posten mit `eingang: true` (z. B. Gehalt) wird am Termin gutgeschrieben statt abgezogen (`abrechnen()`, Buchung `einzahlung` mit `art: 'eingang'`); künftige Eingänge reservieren nichts und zählen erst nach dem Buchen als frei
 - **Einzahlungen** und spontane **Ausgaben** erfassen
+- **Vorschläge beim Tippen**: `notizVorschlaege()` füllt die `<datalist>` hinter „Wofür?" und „Notiz" aus dem Verlauf; nur bei Einzahlungen wird der übliche Betrag mit eingetragen — bei Ausgaben bewusst nicht
 - **Zweck**: die App soll helfen, **impulsive Käufe zu vermeiden**. Reibung vor dem Ausgeben ist deshalb gewollt, nicht zu „optimieren".
 - **Warnung bei spontanen Ausgaben** (drei Gründe, alle in `pruefeAusgabe()`):
   - Betrag > 1/3 der Summe der noch offenen Posten (künftige Tage im laufenden Monat)
@@ -12,6 +14,7 @@ iNeedMoney: persönliche Spar-App. Features (vom Nutzer gefordert):
   - Betrag > frei verfügbar (geht an reservierte Posten)
   Bei einer Warnung ist „Trotzdem ausgeben" erst nach 10 Sekunden drückbar.
 - **Wunschliste mit Abkühlzeit**: ein Wunsch wird 48 Stunden geparkt und ist erst danach kaufbar; verwerfen geht jederzeit und zählt als gespart
+- **Erinnerung ans Parken**: im Ausgabe-Blatt ab mehr als einem Tagesbudget (`parkHinweis()`), nur ein Hinweis über dem Park-Knopf — kein Warngrund, keine Bremse
 - **Sparziel als eigener Topf**: zurückgelegtes Geld verlässt das Konto und „frei verfügbar"; zurücklegen geht nur aus dem freien Geld, Ausgaben werden gegen das Ziel gestellt
 - **Grundbedarf**: Artikel im Vorrat lassen sich als Grundbedarf (Lebensmittel) markieren; ihr Kauf löst keine Budget-/Drittel-Warnung aus, nur noch „mehr als frei verfügbar"
 - **Scannen & gleich bezahlen**: im Laden Barcode scannen, Preis bestätigen oder eintippen, der Betrag wird sofort abgezogen (`sofortKauf()`); Nicht-Grundbedarf läuft dabei durch Warnung und Bremse

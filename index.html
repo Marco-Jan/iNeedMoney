@@ -62,10 +62,6 @@
           <svg aria-hidden="true" viewBox="0 0 24 24" class="dick"><path d="M12 5v14M5 12h14"/></svg>
           Einzahlen
         </button>
-        <button class="knopf breit" type="button" data-oeffnet="wunsch">
-          <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-          Will ich haben &ndash; erst parken
-        </button>
       </div>
 
       <!-- Sparziel: eigener Topf, das Geld darin ist nicht mehr "frei verfuegbar" -->
@@ -98,7 +94,11 @@
         </div>
         <div class="card">
           <ul id="wunsch-liste" class="liste"></ul>
-          <p class="leer" id="wunsch-leer" hidden>Nichts geparkt. Wenn dich etwas reizt: erst parken, in 48&nbsp;Stunden entscheiden.</p>
+          <p class="leer" id="wunsch-leer" hidden>Nichts geparkt. Wenn dich etwas reizt: erst parken, in 48&nbsp;Stunden entscheiden. Abgebucht wird dabei nichts.</p>
+          <button class="knopf wunsch-knopf" type="button" data-oeffnet="wunsch">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+            Will ich haben &ndash; erst parken
+          </button>
         </div>
         <p class="fussnote oben" id="wunsch-bilanz"></p>
       </section>
@@ -336,8 +336,10 @@
           <input class="betrag-gross" type="text" inputmode="decimal" id="ein-betrag" placeholder="0,00" autocomplete="off" required>
           <p class="betrag-folge" id="ein-danach"></p>
           <label for="ein-notiz">Notiz (optional)</label>
-          <input type="text" id="ein-notiz" autocomplete="off" placeholder="z.&nbsp;B. Gehalt">
+          <input type="text" id="ein-notiz" autocomplete="off" placeholder="z.&nbsp;B. Gehalt" list="ein-vorschlaege">
+          <datalist id="ein-vorschlaege"></datalist>
           <button type="submit" class="knopf haupt">Einzahlen</button>
+          <button type="button" class="knopf" id="ein-regel">Kommt regelm&auml;&szlig;ig &ndash; als festen Eingang anlegen</button>
         </form>
       </div>
 
@@ -361,8 +363,10 @@
           </div>
           <div id="ausgabe-warnung" class="warnung" role="status" hidden></div>
           <label for="aus-notiz">Wof&uuml;r? (optional)</label>
-          <input type="text" id="aus-notiz" autocomplete="off" placeholder="z.&nbsp;B. Schuhe">
+          <input type="text" id="aus-notiz" autocomplete="off" placeholder="z.&nbsp;B. Schuhe" list="aus-vorschlaege">
+          <datalist id="aus-vorschlaege"></datalist>
           <button type="submit" class="knopf haupt" id="aus-submit">Ausgeben</button>
+          <p class="park-hinweis" id="aus-parkhinweis" role="status"></p>
           <button type="button" class="knopf" id="aus-parken">Erst parken &ndash; in 48&nbsp;Stunden entscheiden</button>
         </form>
         <p class="fussnote" id="ausgabe-schwelle"></p>
@@ -430,6 +434,11 @@
             <label for="post-start">Erster Termin</label>
             <input type="date" id="post-start">
           </div>
+
+          <label class="haken" for="post-eingang">
+            <input type="checkbox" id="post-eingang">
+            <span>Das ist ein Eingang (z.&nbsp;B. Gehalt) &ndash; wird gutgeschrieben statt abgezogen</span>
+          </label>
 
           <p class="fussnote" id="post-vorschau"></p>
           <button type="submit" class="knopf haupt" id="post-submit">Posten hinzuf&uuml;gen</button>

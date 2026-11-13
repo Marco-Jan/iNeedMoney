@@ -742,6 +742,61 @@ assert(/BREMSE_SEKUNDEN/.test(appJs) && /Date\.now\(\) < bremseBis/.test(appJs),
   'die Bremse gilt auch fuer das Absenden per Enter, nicht nur fuer den Knopf');
 assert(/visibilitychange/.test(appJs), 'kommt die App wieder nach vorn, wird neu gezeichnet');
 
+block('Erinnerung ans Parken ab einem Tagesbudget');
+L.zuruecksetzen();
+assert(/nichts frei/.test(L.parkHinweis(500)), 'ohne freies Geld wird bei jedem Betrag ans Parken erinnert');
+L.einzahlen(300000, 'Start');
+const phBudget = L.tagesbudget() * L.PARK_HINWEIS_TAGE;
+assert(L.parkHinweis(phBudget) === null, 'genau ein Tagesbudget: keine Erinnerung');
+assert(/parken/.test(L.parkHinweis(phBudget + 1)), 'mehr als ein Tagesbudget: Erinnerung ans Parken');
+assert(L.parkHinweis(0) === null && L.parkHinweis(NaN) === null, 'ohne gueltigen Betrag keine Erinnerung');
+assert(L.pruefeAusgabe(phBudget + 1).gruende.indexOf('park') === -1, 'die Erinnerung ist kein Warngrund');
+assert(htmlIds.has('aus-parkhinweis'), '#aus-parkhinweis steht im HTML');
+
+block('Fester Eingang: wird gutgeschrieben statt abgezogen');
+L.zuruecksetzen();
+L.einzahlen(100000, 'Start');
+const feHeute = new Date();
+const feR = L.postenSpeichern({ name: 'Gehalt', betrag: 200000, rhythmus: 'monat', intervall: 1, tag: feHeute.getDate(), eingang: true });
+assert(feR.ok && feR.eingang === true, 'ein fester Eingang laesst sich anlegen');
+assert(L.state.saldo === 300000, 'der heute faellige Eingang wird gutgeschrieben, nicht abgezogen');
+const feT = L.state.transaktionen.find(t => t.name === 'Gehalt');
+assert(feT && feT.typ === 'einzahlung' && feT.art === 'eingang', 'die Buchung ist eine Einzahlung mit Herkunft');
+assert(L.monatsBilanz().einzahlungen === 300000 && L.monatsBilanz().posten === 0, 'er zaehlt als Einzahlung, nicht als Posten');
+assert(!L.buchungZuruecknehmen(feT.id).ok && L.state.saldo === 300000, 'ein gebuchter Eingang laesst sich nicht zuruecknehmen');
+const feFreiVor = L.freiVerfuegbar();
+const feMorgen = L.isoVon(new Date(feHeute.getFullYear(), feHeute.getMonth(), feHeute.getDate() + 1));
+L.postenSpeichern({ name: 'Nebenjob', betrag: 50000, rhythmus: 'woche', intervall: 1, start: feMorgen, eingang: true });
+assert(L.summeOffen() === 0 && L.freiVerfuegbar() === feFreiVor, 'ein kuenftiger Eingang reserviert nichts und zaehlt noch nicht als frei');
+assert(L.offenePosten().length === 0, 'Eingaenge sind keine offenen Posten');
+const feRund = L.normalisiere(JSON.parse(L.exportDaten()).daten);
+assert(feRund.posten.every(p => p.eingang === true) && feRund.transaktionen.some(t => t.art === 'eingang'),
+  'Eingang und Herkunft ueberleben das Backup');
+const feId = L.state.posten.find(p => p.name === 'Nebenjob').id;
+L.postenSpeichern({ id: feId, name: 'Nebenjob', betrag: 50000, rhythmus: 'woche', intervall: 1, start: feMorgen });
+assert(!('eingang' in L.state.posten.find(p => p.id === feId)), 'ohne Haken wird aus dem Eingang wieder ein Posten');
+assert(htmlIds.has('post-eingang') && htmlIds.has('ein-regel'), 'Haken und Abkuerzung stehen im HTML');
+
+block('Vorschlaege fuers Notizfeld');
+L.zuruecksetzen();
+L.einzahlen(500000, 'Flohmarkt');
+L.ausgeben(300, 'Bier');
+L.ausgeben(250, 'Kaffee');
+L.ausgeben(280, 'kaffee ');
+L.ausgeben(100, '');
+L.einkaufHinzu({ name: 'Brot', preis: 250, menge: 1 });
+L.einkaufAbschliessen(null, 'Baecker');
+const nv = L.notizVorschlaege('ausgabe');
+assert(nv.length === 2 && nv[0].anzahl === 2 && nv[0].name.toLowerCase() === 'kaffee',
+  'das Haeufigste steht vorn, Gross-/Kleinschreibung zaehlt zusammen');
+assert(nv[0].betrag === 280, 'der Betrag ist der zuletzt gebuchte');
+assert(!nv.some(v => /Baecker|Brot/.test(v.name)), 'Einkaeufe von der Liste sind keine Vorschlaege');
+L.postenSpeichern({ name: 'Gehalt', betrag: 200000, rhythmus: 'monat', intervall: 1, tag: new Date().getDate(), eingang: true });
+const nvEin = L.notizVorschlaege('einzahlung');
+assert(nvEin.length === 1 && nvEin[0].name === 'Flohmarkt', 'feste Eingaenge sind keine Vorschlaege fuers Einzahlen');
+assert(L.notizVorschlaege('ausgabe', 1).length === 1, 'die Anzahl laesst sich begrenzen');
+assert(htmlIds.has('aus-vorschlaege') && htmlIds.has('ein-vorschlaege'), 'die Vorschlagslisten stehen im HTML');
+
 block('Muster: spontane Ausgaben und "trotz Warnung"');
 L.zuruecksetzen();
 L.einzahlen(300000, 'Start');
